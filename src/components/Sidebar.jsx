@@ -1,3 +1,4 @@
+// ...existing code...
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useAuth } from "../context/AuthContext";
@@ -29,13 +30,14 @@ export default function Sidebar() {
     <div style={{
       width: "220px",
       background: "#111111",
-      minHeight: "100vh",
+      height: "100vh",         // changed from minHeight to exact viewport height
       position: "fixed",
-      left: 0, top: 0,
+      left: 0, top: 0, bottom: 0, // ensure it spans full height
       display: "flex",
       flexDirection: "column",
       zIndex: 20,
-      borderRight: "4px solid #C8102E"
+      borderRight: "4px solid #C8102E",
+      overflow: "hidden"       // prevent double scroll; nav will handle scrolling
     }}>
       {/* Logo */}
       <div style={{ padding: "28px 24px 20px", borderBottom: "1px solid #1f1f1f" }}>
@@ -71,7 +73,13 @@ export default function Sidebar() {
       </div>
 
       {/* Nav */}
-      <nav style={{ flex: 1, paddingTop: "12px", overflowY: "auto" }}>
+      <nav style={{
+        flex: "1 1 auto",        // take remaining space
+        paddingTop: "12px",
+        paddingBottom: "16px",   // space so last item isn't hidden behind footer
+        overflowY: "auto",       // enable vertical scrolling
+        WebkitOverflowScrolling: "touch" // smooth scrolling on iOS
+      }}>
         {allLinks.map(link => {
           const isActive = router.pathname === link.to;
           return (
@@ -93,6 +101,8 @@ export default function Sidebar() {
                 textTransform: "uppercase",
                 letterSpacing: "0.08em",
                 borderLeft: isActive ? "4px solid white" : "4px solid transparent",
+                boxSizing: "border-box",
+                width: "100%"
               }}
             >
               {link.label}
@@ -102,13 +112,14 @@ export default function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div style={{ padding: "16px 24px", borderTop: "1px solid #1f1f1f" }}>
+      <div style={{ padding: "16px 24px", borderTop: "1px solid #1f1f1f", background: "#0f0f0f" }}>
         <p style={{
           color: "#333",
           fontSize: "10px",
           fontFamily: "'Barlow Condensed', sans-serif",
           letterSpacing: "0.05em",
-          textTransform: "uppercase"
+          textTransform: "uppercase",
+          margin: 0
         }}>
           © 2026 Inventory
         </p>
@@ -116,3 +127,4 @@ export default function Sidebar() {
     </div>
   );
 }
+// ...existing code...
