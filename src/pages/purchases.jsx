@@ -74,8 +74,9 @@ export default function Purchases() {
     const items = [...form.items];
     items[i][field] = value;
     if (field === "quantity_cases" || field === "price_per_case") {
-      items[i].total_price =
-        (parseFloat(items[i].quantity_cases || 0) * parseFloat(items[i].price_per_case || 0)).toString();
+      const qty = parseFloat(items[i].quantity_cases || 0);
+      const price = parseFloat(items[i].price_per_case || 0);
+      items[i].total_price = (qty * price).toFixed(2); // store as string with 2 decimals
     }
     setForm({ ...form, items });
   };
@@ -370,6 +371,7 @@ export default function Purchases() {
                         <label style={labelStyle}>Cases</label>
                         <input
                           type="number"
+                          step="1"
                           className="input"
                           style={{ marginTop: "6px" }}
                           value={item.quantity_cases}
@@ -382,17 +384,19 @@ export default function Purchases() {
                         <label style={labelStyle}>Price per Case</label>
                         <input
                           type="number"
+                          step="any"
+                          min="0"
+                          inputMode="decimal"
                           className="input"
                           style={{ marginTop: "6px" }}
                           value={item.price_per_case}
                           onChange={e => updateItem(i, "price_per_case", e.target.value)}
-                          min="0"
                           placeholder="0"
                         />
                       </div>
                       <div style={{ textAlign: "right" }}>
                         <span style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 700, fontSize: "1.4rem", color: "#111" }}>
-                          ₹{parseFloat(item.total_price || 0).toLocaleString()}
+                          ₹{parseFloat(item.total_price || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </div>
                     </div>
@@ -400,7 +404,7 @@ export default function Purchases() {
                 ))}
 
                 <div style={{ textAlign: "right", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: "1.3rem", marginTop: "8px", borderTop: "2px solid #111", paddingTop: "8px" }}>
-                  Items Subtotal: ₹{itemsTotal.toLocaleString()}
+                  Items Subtotal: ₹{itemsTotal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
               </div>
 
@@ -410,24 +414,28 @@ export default function Purchases() {
                     <label style={labelStyle}>GST Amount</label>
                     <input
                       type="number"
+                      step="any"
+                      min="0"
+                      inputMode="decimal"
                       className="input"
                       style={{ marginTop: "6px" }}
                       value={form.gst_amount}
                       onChange={e => setForm({ ...form, gst_amount: e.target.value })}
                       placeholder="0"
-                      min="0"
                     />
                   </div>
                   <div>
                     <label style={labelStyle}>Transport Cost</label>
                     <input
                       type="number"
+                      step="any"
+                      min="0"
+                      inputMode="decimal"
                       className="input"
                       style={{ marginTop: "6px" }}
                       value={form.transport_cost}
                       onChange={e => setForm({ ...form, transport_cost: e.target.value })}
                       placeholder="0"
-                      min="0"
                     />
                   </div>
                 </div>
@@ -436,7 +444,7 @@ export default function Purchases() {
               <div style={{ background: "#f8f8f8", borderLeft: "4px solid #16a34a", padding: "16px", marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span style={labelStyle}>Grand Total</span>
                 <span style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: "1.8rem", fontWeight: 700, color: "#16a34a" }}>
-                  ₹{grandTotal.toLocaleString()}
+                  ₹{grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
 
@@ -444,12 +452,14 @@ export default function Purchases() {
                 <label style={labelStyle}>Amount Paid Now (0 if pending)</label>
                 <input
                   type="number"
+                  step="any"
+                  min="0"
+                  inputMode="decimal"
                   className="input"
                   style={{ marginTop: "6px" }}
                   value={form.paid_amount}
                   onChange={e => setForm({ ...form, paid_amount: e.target.value })}
                   placeholder="0"
-                  min="0"
                 />
                 {parseFloat(form.paid_amount) > 0 && grandTotal > 0 && (
                   <p style={{ fontSize: "12px", color: "#C8102E", marginTop: "6px", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700 }}>
