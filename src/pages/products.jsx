@@ -21,21 +21,43 @@ export default function Products() {
   const openAdd = () => { setForm(empty); setEditing(null); setModal(true); };
   const openEdit = (p) => { setForm(p); setEditing(p.id); setModal(true); };
 
+  // ...existing code...
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (loading) return;
     setLoading(true);
     try {
-      if (editing) await api.put(`/products/${editing}`, form);
-      else await api.post("/products", form);
+      // parse numeric fields to allow decimals (no negatives) before sending
+      const payload = {
+        ...form,
+        selling_price: form.selling_price === "" ? null : parseFloat(form.selling_price),
+        selling_price_per_unit: form.selling_price_per_unit === "" ? null : parseFloat(form.selling_price_per_unit),
+        bottles_per_case: form.bottles_per_case === "" ? null : parseFloat(form.bottles_per_case),
+        breakage_penalty: form.breakage_penalty === "" ? null : parseFloat(form.breakage_penalty)
+      };
+
+      // basic validation
+      if (payload.selling_price == null || Number.isNaN(payload.selling_price) || payload.selling_price < 0) {
+        throw new Error("Selling price per case must be a non-negative number");
+      }
+      if (payload.selling_price_per_unit == null || Number.isNaN(payload.selling_price_per_unit) || payload.selling_price_per_unit < 0) {
+        throw new Error("Selling price per bottle must be a non-negative number");
+      }
+      if (payload.bottles_per_case == null || Number.isNaN(payload.bottles_per_case) || payload.bottles_per_case <= 0) {
+        throw new Error("Bottles per case must be a positive number");
+      }
+
+      if (editing) await api.put(`/products/${editing}`, payload);
+      else await api.post("/products", payload);
       setModal(false);
       load();
     } catch (err) {
-      alert(err.response?.data?.error || "Failed to save product");
+      alert(err.response?.data?.error || err.message || "Failed to save product");
     } finally {
       setLoading(false);
     }
   };
+// ...existing code...
 
   const handleDelete = async (id) => {
     if (!confirm("Delete this product?")) return;
@@ -213,6 +235,9 @@ export default function Products() {
                   <label style={labelStyle}>Selling Price / Case ₹</label>
                   <input
                     type="number"
+                    step="any"
+                    min="0"
+                    inputMode="decimal"
                     className="input"
                     style={{ marginTop: "6px" }}
                     value={form.selling_price}
@@ -220,10 +245,14 @@ export default function Products() {
                     required
                   />
                 </div>
+
                 <div>
                   <label style={labelStyle}>Selling Price / Bottle ₹</label>
                   <input
                     type="number"
+                    step="any"
+                    min="0"
+                    inputMode="decimal"
                     className="input"
                     style={{ marginTop: "6px" }}
                     value={form.selling_price_per_unit}
