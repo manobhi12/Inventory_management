@@ -496,9 +496,8 @@ export default function Bills() {
                 </div>
               </div>
               <div style={{ borderTop: "2px solid #f0f0f0", paddingTop: "16px", marginBottom: "16px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                <div style={{ marginBottom: "12px" }}>
                   <label style={labelStyle}>Products</label>
-                  <button type="button" onClick={addItem} style={{ color: "#C8102E", fontSize: "12px", background: "none", border: "none", cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>+ Add Product</button>
                 </div>
                 {form.items.map((item, i) => {
                   const selectedProduct = products.find(p => p.id === item.product_id);
@@ -539,6 +538,7 @@ export default function Bills() {
                     </div>
                   );
                 })}
+                <button type="button" onClick={addItem} style={{ color: "#C8102E", fontSize: "15px", background: "none", border: "none", cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginTop: "8px", display: "block" }}>+ Add Product</button>
                 <div style={{ textAlign: "right", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: "1.3rem", marginTop: "8px", borderTop: "2px solid #111", paddingTop: "8px" }}>
                   Total: ₹{grandTotal.toLocaleString()}
                 </div>
