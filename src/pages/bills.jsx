@@ -73,6 +73,7 @@ export default function Bills() {
   const [error, setError] = useState("");
   const [selectedBills, setSelectedBills] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [stockCache, setStockCache] = useState({});
   const [editLoading, setEditLoading] = useState(false);
   const { user } = useAuth();
   const [startDate, setStartDate] = useState("");
@@ -127,7 +128,7 @@ export default function Bills() {
   };
 
   const getStock = (productId) => {
-    const rows = inventory.filter(inv => inv.product_id === productId);
+    const rows = inventory.filter(inv => String(inv.product_id) === String(productId));
     if (!rows.length) return null;
     const totalCases = rows.reduce((s, r) => s + (parseInt(r.quantity_cases) || 0), 0);
     const totalUnits = rows.reduce((s, r) => s + (parseInt(r.quantity_units) || 0), 0);
@@ -164,6 +165,20 @@ export default function Bills() {
       const p = products.find(p => p.id === val);
       if (p) { items[i].price_per_case = parseFloat(p.selling_price) || 0; items[i].price_per_unit = parseFloat(p.selling_price_per_unit) || 0; items[i].bottles_per_case = parseInt(p.bottles_per_case) || 24; }
       else { items[i].price_per_case = 0; items[i].price_per_unit = 0; items[i].bottles_per_case = 24; }
+    }
+    if (val) {
+      api.get(`/bills/stock/${val}`).then(res => {
+        if (res.data) {
+          const { quantity_cases, quantity_units, bottles_per_case } = res.data;
+          const bpc = parseInt(bottles_per_case) || 24;
+          const parts = [];
+          if (parseInt(quantity_cases) > 0) parts.push(`${quantity_cases}C`);
+          if (parseInt(quantity_units) > 0) parts.push(`${quantity_units}B`);
+          setStockCache(prev => ({ ...prev, [val]: parts.length ? parts.join(" ") : "0C" }));
+        } else {
+          setStockCache(prev => ({ ...prev, [val]: "0C" }));
+        }
+      }).catch(() => {});
     }
     items[i].total_price = (parseFloat(items[i].quantity_cases || 0) * parseFloat(items[i].price_per_case || 0)) + (parseFloat(items[i].quantity_units || 0) * parseFloat(items[i].price_per_unit || 0));
     setForm({ ...form, items });
@@ -485,7 +500,7 @@ export default function Bills() {
                 </div>
                 {form.items.map((item, i) => {
                   const selectedProduct = products.find(p => p.id === item.product_id);
-                  const stock = item.product_id ? getStock(item.product_id) : null;
+                  const stock = item.product_id ? (stockCache[item.product_id] ?? null) : null;
                   return (
                     <div key={i} style={{ background: "#f8f8f8", borderLeft: "3px solid #e0e0e0", padding: "12px", marginBottom: "10px" }}>
                       <div style={{ display: "flex", gap: "8px", alignItems: "flex-start", marginBottom: "8px" }}>
@@ -496,11 +511,11 @@ export default function Bills() {
                       </div>
                       {selectedProduct && (
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-                          <p style={{ fontSize: "11px", color: "#aaa", margin: 0, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.04em" }}>
+                          <p style={{ fontSize: "13px", color: "#111", margin: 0, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.04em" }}>
                             ₹{selectedProduct.selling_price}/case &nbsp;|&nbsp; ₹{selectedProduct.selling_price_per_unit}/bottle &nbsp;|&nbsp; {selectedProduct.bottles_per_case} bottles/case
                           </p>
                           {stock !== null && (
-                            <span style={{ fontSize: "11px", fontWeight: 700, color: "#444", fontFamily: "'IBM Plex Sans', sans-serif", background: "#e8e8e8", padding: "2px 8px", borderRadius: "3px" }}>
+                            <span style={{ fontSize: "13px", fontWeight: 800, color: "#fff", fontFamily: "'IBM Plex Sans', sans-serif", background: stock === "0C" ? "#C8102E" : "#111", padding: "4px 12px", borderRadius: "3px" }}>
                               Stock: {stock}
                             </span>
                           )}

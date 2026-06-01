@@ -246,4 +246,18 @@ router.delete('/:id', auth, async (req, res) => {
   }
 });
 
+router.get('/stock/:product_id', auth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT quantity_cases, quantity_units, bottles_per_case 
+       FROM inventory i JOIN products p ON i.product_id = p.id
+       WHERE i.godown_id = $1 AND i.product_id = $2`,
+      [req.user.godown_id, req.params.product_id]
+    );
+    res.json(result.rows[0] || null);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
