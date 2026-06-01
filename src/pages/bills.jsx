@@ -556,6 +556,31 @@ export default function Bills() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
                   <div>
                     <label style={labelStyle}>Free Products <span style={{ color: "#888", fontWeight: 400, textTransform: "none", fontSize: "11px" }}>(optional)</span></label>
+                    {form.items.some(item => item.product_id && (parseFloat(item.quantity_cases||0) > 0 || parseFloat(item.quantity_units||0) > 0)) && (
+                      <div style={{ borderTop: "2px solid #f0f0f0", paddingTop: "16px", marginBottom: "20px" }}>
+                        <label style={labelStyle}>Bill Summary</label>
+                        <div style={{ marginTop: "10px" }}>
+                          {form.items.filter(item => item.product_id).map((item, i) => {
+                            const p = products.find(p => p.id === item.product_id);
+                            if (!p) return null;
+                            const qty = [parseInt(item.quantity_cases||0) > 0 && `${item.quantity_cases} Cases`, parseInt(item.quantity_units||0) > 0 && `${item.quantity_units} Bottles`].filter(Boolean).join(" + ") || "—";
+                              return (
+                                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 0", borderBottom: "1px solid #f0f0f0" }}>
+                                  <div>
+                                    <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "17px", textTransform: "uppercase", letterSpacing: "0.03em", color: "#111" }}>{p.name}</span>
+                                    <span style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: "14px", color: "#888", marginLeft: "14px", marginRight: "14px" }}>{qty}</span>
+                                  </div>
+                                  <span style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 700, fontSize: "17px", color: "#111" }}>₹{Number(item.total_price||0).toLocaleString()}</span>
+                                </div>
+                              );
+                          })}
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "12px", marginTop: "4px" }}>
+                            <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "13px", textTransform: "uppercase", letterSpacing: "0.08em", color: "#888" }}>Total</span>
+                            <span style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 800, fontSize: "20px", color: "#111" }}>₹{grandTotal.toLocaleString()}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     <p style={{ fontSize: "11px", color: "#bbb", margin: "2px 0 0", fontFamily: "'Barlow Condensed', sans-serif" }}>Won't affect inventory • Will appear in Free Products page</p>
                   </div>
                   <button type="button" onClick={addFreeItem} style={{ color: "#16a34a", fontSize: "12px", background: "none", border: "none", cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>+ Add Free Item</button>
@@ -581,59 +606,6 @@ export default function Bills() {
               </div>
               <div style={{ display: "flex", gap: "12px" }}>
                 <button type="submit" className="btn-primary" style={{ flex: 1 }} disabled={loading}>{loading ? "Saving..." : "Generate Bill"}</button>
-                <button type="button" className="btn-secondary" style={{ flex: 1 }} onClick={() => {
-                  const shop = shops.find(s => s.id === form.shop_id);
-                  const driver = drivers.find(d => d.id === form.driver_id);
-                  const win = window.open('', '_blank');
-                  win.document.write(`<html><head><title>Bill Preview</title>
-                    <style>
-                      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial; font-size:12px; color:#111; padding:20px; max-width:300px; width:300px; margin:auto; box-sizing:border-box; }
-                      .title { font-size:16px; font-weight:800; text-align:center; margin-bottom:4px; }
-                      .shop-name { font-size:14px; font-weight:700; text-align:center; margin-bottom:6px; }
-                      .center { text-align:center; font-size:11px; color:#555; margin-bottom:8px; }
-                      .line { border-top:1px dashed #000; margin:8px 0; }
-                      .row { display:flex; justify-content:space-between; margin:4px 0; }
-                      table { width:100%; border-collapse:collapse; margin:8px 0; font-size:12px; }
-                      th { text-align:left; font-size:11px; border-bottom:1px solid #000; padding:3px 0; text-transform:uppercase; }
-                      td { padding:3px 0; font-size:12px; }
-                      .num { font-family: "Courier New", monospace; }
-                      .right { text-align:right; }
-                      .draft { text-align:center; font-size:11px; color:#111; font-style:italic; margin-bottom:8px; }
-                      @media print { body { padding:5px; } }
-                    </style>
-                  </head><body>
-                    <div class="title">SHOP BILL</div>
-                    <div class="draft">*** DRAFT — NOT CONFIRMED ***</div>
-                    ${shop ? `<div class="shop-name">${shop.name}</div>` : ''}
-                    <div class="line"></div>
-                    <div class="row"><span>Date:</span><span class="num">${new Date().toLocaleDateString('en-IN')}</span></div>
-                    ${driver ? `<div class="row"><span>Driver:</span><span class="num">${driver.name}</span></div>` : ''}
-                    ${form.delivery_date ? `<div class="row"><span>Delivery:</span><span class="num">${new Date(form.delivery_date).toLocaleDateString('en-IN')}</span></div>` : ''}
-                    <div class="line"></div>
-                    <table><thead><tr>
-                      <th>Product</th><th style="text-align:center">Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Amt</th>
-                    </tr></thead><tbody>
-                    ${form.items.filter(item => item.product_id).map(item => {
-                      const p = products.find(p => p.id === item.product_id);
-                      const qty = `${parseInt(item.quantity_cases||0) > 0 ? item.quantity_cases + 'C' : ''}${parseInt(item.quantity_units||0) > 0 ? ' ' + item.quantity_units + 'B' : ''}`;
-                      const rate = parseInt(item.quantity_cases||0) > 0 ? item.price_per_case : item.price_per_unit;
-                      return `<tr>
-                        <td style="font-weight:600">${p ? p.name : ''}</td>
-                        <td style="text-align:center">${qty || '—'}</td>
-                        <td class="right num">₹${Number(rate).toLocaleString()}</td>
-                        <td class="right num">₹${Number(item.total_price).toLocaleString()}</td>
-                      </tr>`;
-                    }).join('')}
-                    </tbody></table>
-                    <div class="line"></div>
-                    <div class="row" style="font-weight:700;font-size:13px;"><span>TOTAL</span><span class="num">₹${grandTotal.toLocaleString()}</span></div>
-                    <div class="row"><span>Paid</span><span class="num">₹${Number(form.paid_amount || 0).toLocaleString()}</span></div>
-                    <div class="row"><span>Pending</span><span class="num">₹${Math.max(0, grandTotal - parseFloat(form.paid_amount || 0)).toLocaleString()}</span></div>
-                    <div class="line"></div>
-                    <div class="draft">*** DRAFT — NOT CONFIRMED ***</div>
-                  </body></html>`);
-                  win.document.close(); win.focus(); win.print(); win.close();
-                }}>Preview Print</button>
                 <button type="button" className="btn-outline" style={{ flex: 1 }} onClick={() => setModal(false)}>Cancel</button>
               </div>
             </form>
