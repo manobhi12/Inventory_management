@@ -171,10 +171,12 @@ export default function Bills() {
         if (res.data) {
           const { quantity_cases, quantity_units, bottles_per_case } = res.data;
           const bpc = parseInt(bottles_per_case) || 24;
+          const cases = parseInt(quantity_cases) || 0;
+          const units = parseInt(quantity_units) || 0;
           const parts = [];
-          if (parseInt(quantity_cases) > 0) parts.push(`${quantity_cases}C`);
-          if (parseInt(quantity_units) > 0) parts.push(`${quantity_units}B`);
-          setStockCache(prev => ({ ...prev, [val]: parts.length ? parts.join(" ") : "0C" }));
+          if (cases > 0) parts.push(`${cases}C`);
+          if (units > 0) parts.push(`${units}B`);
+          setStockCache(prev => ({ ...prev, [val]: parts.join(" ") }));
         } else {
           setStockCache(prev => ({ ...prev, [val]: "0C" }));
         }
