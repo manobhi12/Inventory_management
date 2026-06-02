@@ -13,7 +13,7 @@ const RANGES = [
 function StatCard({ label, value, color = "#111111", sub }) {
   return (
     <div className="card">
-      <p style={{ fontSize: "11px", color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "8px" }}>{label}</p>
+      <p style={{ fontSize: "13px", color: "#111", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "6px" }}>{label}</p>
       <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "2rem", fontWeight: 700, color }}>{value}</p>
       {sub && <p style={{ fontSize: "11px", color: "#9ca3af", marginTop: "4px" }}>{sub}</p>}
     </div>
@@ -43,8 +43,8 @@ export default function Dashboard() {
   const fmt = (val) => `₹${Number(val || 0).toLocaleString()}`;
 
   const labelStyle = {
-    fontSize: "11px",
-    color: "#888",
+    fontSize: "13px",
+    color: "#111",
     textTransform: "uppercase",
     letterSpacing: "0.08em",
     fontFamily: "'Barlow Condensed', sans-serif",
@@ -126,7 +126,7 @@ export default function Dashboard() {
               sub={`Shop: ${fmt(stats.shop_sales)} | Counter: ${fmt(stats.counter_sales)}`}
             />
             <StatCard
-              label="Shop Sales"
+              label="Delivery Sales"
               value={fmt(stats.shop_sales)}
               color="#16a34a"
             />
