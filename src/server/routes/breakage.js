@@ -5,10 +5,12 @@ const auth = require('../middleware/auth');
 router.get('/', auth, async (req, res) => {
   try {
     let query = `
-      SELECT b.*, p.name as product_name, p.breakage_penalty, g.name as godown_name
+      SELECT b.*, p.name as product_name, p.breakage_penalty, g.name as godown_name,
+             s.name as shop_name
       FROM breakage b
       JOIN products p ON b.product_id = p.id
       JOIN godowns g ON b.godown_id = g.id
+      LEFT JOIN shops s ON b.shop_id = s.id
     `;
     const params = [];
     if (req.user.role === 'godown') {
@@ -24,7 +26,7 @@ router.get('/', auth, async (req, res) => {
 });
 
 router.post('/', auth, async (req, res) => {
-  const { product_id, quantity_bottles, reason, breakage_date } = req.body;
+  const { product_id, quantity_bottles, reason, breakage_date, shop_id } = req.body;
   const godown_id = req.user.godown_id;
   if (!godown_id) return res.status(400).json({ error: 'Admin cannot add breakage' });
 
@@ -32,19 +34,18 @@ router.post('/', auth, async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // Get penalty per bottle from product
     const prod = await client.query(`SELECT breakage_penalty, bottles_per_case FROM products WHERE id=$1`, [product_id]);
     if (!prod.rows[0]) throw new Error('Product not found');
     const penalty = parseFloat(prod.rows[0].breakage_penalty || 3);
     const total_penalty = penalty * parseInt(quantity_bottles);
 
     const result = await client.query(
-      `INSERT INTO breakage (godown_id, product_id, quantity_bottles, penalty_per_bottle, total_penalty, reason, breakage_date)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [godown_id, product_id, quantity_bottles, penalty, total_penalty, reason, breakage_date || new Date().toISOString().split('T')[0]]
+      `INSERT INTO breakage (godown_id, product_id, quantity_bottles, penalty_per_bottle, total_penalty, reason, breakage_date, shop_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [godown_id, product_id, quantity_bottles, penalty, total_penalty, reason,
+       breakage_date || new Date().toISOString().split('T')[0], shop_id || null]
     );
 
-    // Decrease inventory
     const inv = await client.query(
       `SELECT quantity_cases, quantity_units FROM inventory WHERE godown_id=$1 AND product_id=$2`,
       [godown_id, product_id]
