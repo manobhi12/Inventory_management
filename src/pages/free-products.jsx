@@ -57,7 +57,7 @@ function SearchableSelect({ options, value, onChange, placeholder = "Search...",
 
 const today = new Date().toISOString().split("T")[0];
 const emptyItem = { product_id: "", quantity_units: "" };
-const emptyForm = { shop_id: "", given_date: today, notes: "", items: [{ ...emptyItem }] };
+const emptyForm = { shop_id: "", given_date: today, notes: "", sale_type: "DELIVERY", items: [{ ...emptyItem }] };
 
 const labelStyle = {
   fontSize: "11px", color: "#888", textTransform: "uppercase",
@@ -78,6 +78,7 @@ export default function FreeProducts() {
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(false);
+  const submittingRef = useRef(false);
   const [expandedGroups, setExpandedGroups] = useState({});
 
   const [startDate, setStartDate] = useState("");
@@ -149,6 +150,7 @@ export default function FreeProducts() {
       shop_id: entry.shop_id || "",
       given_date: entry.given_date ? entry.given_date.split("T")[0] : today,
       notes: entry.notes || "",
+      sale_type: entry.sale_type || "DELIVERY",
       items: [{ product_id: entry.product_id, quantity_units: entry.quantity_units.toString() }]
     });
     setEditingId(entry.id);
@@ -166,7 +168,8 @@ export default function FreeProducts() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (loading) return;
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
     try {
       if (editingId) {
@@ -176,7 +179,8 @@ export default function FreeProducts() {
           quantity_units: parseInt(item.quantity_units),
           notes: form.notes,
           given_date: form.given_date,
-          shop_id: form.shop_id || null
+          shop_id: form.shop_id || null,
+          sale_type: form.sale_type || 'DELIVERY'
         });
       } else {
         for (const item of form.items) {
@@ -186,7 +190,8 @@ export default function FreeProducts() {
             quantity_units: parseInt(item.quantity_units),
             notes: form.notes,
             given_date: form.given_date,
-            shop_id: form.shop_id || null
+            shop_id: form.shop_id || null,
+            sale_type: form.sale_type || 'DELIVERY'
           });
         }
       }
@@ -195,6 +200,7 @@ export default function FreeProducts() {
     } catch (err) {
       alert(err.response?.data?.error || "Failed to save entry");
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
@@ -249,7 +255,7 @@ export default function FreeProducts() {
         <table style={{ width: "100%", fontSize: "14px", borderCollapse: "collapse" }}>
           <thead className="table-head">
             <tr>
-              {["Date", "Shop", "Products", "Total Bottles", "Value", "Notes", "Actions"].map(h => (
+              {["Date", "Shop", "Products", "Total Bottles", "Value", "Type", "Notes", "Actions"].map(h => (
                 <th key={h} style={{ padding: "12px 16px" }}>{h}</th>
               ))}
             </tr>
@@ -295,6 +301,15 @@ export default function FreeProducts() {
                     <td style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 700, fontSize: "19px", color: "#C8102E", padding: "16px" }}>
                       ₹{groupValue.toLocaleString()}
                     </td>
+                    <td style={{ padding: "16px" }}>
+                      <span style={{
+                        background: group.rows[0]?.sale_type === "COUNTER" ? "#ede9fe" : "#dbeafe",
+                        color: group.rows[0]?.sale_type === "COUNTER" ? "#5b21b6" : "#1d4ed8",
+                        padding: "4px 12px", borderRadius: "9999px", fontSize: "13px", fontWeight: 600
+                      }}>
+                        {group.rows[0]?.sale_type === "COUNTER" ? "Counter" : "Delivery"}
+                      </span>
+                    </td>
                     <td style={{ color: "#888", fontSize: "15px", padding: "16px" }}>
                       {firstNotes || "—"}
                     </td>
@@ -318,7 +333,7 @@ export default function FreeProducts() {
                         <table style={{ width: "100%", fontSize: "13px", borderCollapse: "collapse", marginTop: "8px" }}>
                           <thead>
                             <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-                              {["Product", "Bottles", "Value", "Notes", "Actions"].map(h => (
+                              {["Product", "Bottles", "Value", "Type", "Notes", "Actions"].map(h => (
                                 <th key={h} style={{ textAlign: "left", padding: "6px 12px", color: "#888", fontSize: "11px", textTransform: "uppercase", fontWeight: 600 }}>{h}</th>
                               ))}
                             </tr>
@@ -329,6 +344,15 @@ export default function FreeProducts() {
                                 <td style={{ padding: "8px 12px", fontWeight: 600 }}>{r.product_name}</td>
                                 <td style={{ padding: "8px 12px" }}>{r.quantity_units}B</td>
                                 <td style={{ padding: "8px 12px", fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 700, color: "#C8102E" }}>₹{getRowValue(r).toLocaleString()}</td>
+                                <td style={{ padding: "8px 12px" }}>
+                                  <span style={{
+                                    background: r.sale_type === "COUNTER" ? "#ede9fe" : "#dbeafe",
+                                    color: r.sale_type === "COUNTER" ? "#5b21b6" : "#1d4ed8",
+                                    padding: "3px 10px", borderRadius: "9999px", fontSize: "12px", fontWeight: 600
+                                  }}>
+                                    {r.sale_type === "COUNTER" ? "Counter" : "Delivery"}
+                                  </span>
+                                </td>
                                 <td style={{ padding: "8px 12px", color: "#888" }}>{r.notes || "—"}</td>
                                 <td style={{ padding: "8px 12px" }}>
                                   <div style={{ display: "flex", gap: "12px" }}>
@@ -428,6 +452,28 @@ export default function FreeProducts() {
                     </div>
                   </div>
                 ))}
+              </div>
+
+              {/* Sale Type */}
+              <div style={{ marginBottom: "20px" }}>
+                <label style={labelStyle}>Sale Type</label>
+                <div style={{ display: "flex", gap: "12px", marginTop: "8px" }}>
+                  {["DELIVERY", "COUNTER"].map(type => (
+                    <button key={type} type="button"
+                      onClick={() => setForm({ ...form, sale_type: type })}
+                      style={{
+                        flex: 1, padding: "10px", border: "2px solid",
+                        borderColor: form.sale_type === type ? (type === "COUNTER" ? "#5b21b6" : "#1d4ed8") : "#e5e7eb",
+                        background: form.sale_type === type ? (type === "COUNTER" ? "#ede9fe" : "#dbeafe") : "#fff",
+                        color: form.sale_type === type ? (type === "COUNTER" ? "#5b21b6" : "#1d4ed8") : "#888",
+                        borderRadius: "4px", cursor: "pointer",
+                        fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700,
+                        fontSize: "14px", textTransform: "uppercase", letterSpacing: "0.06em"
+                      }}>
+                      {type === "DELIVERY" ? "🚚 Delivery" : "🏪 Counter"}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Notes */}
