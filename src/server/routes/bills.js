@@ -2,22 +2,46 @@ const router = require('express').Router();
 const pool = require('../db');
 const auth = require('../middleware/auth');
 
+const generateBillCode = async (client) => {
+  const today = new Date();
+  const dd = String(today.getDate()).padStart(2, '0');
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const yy = String(today.getFullYear()).slice(-2);
+  const prefix = `B-${dd}${mm}${yy}`;
+  const result = await client.query(
+    `SELECT bill_code FROM bills WHERE bill_code LIKE $1 ORDER BY bill_code DESC LIMIT 1`,
+    [`${prefix}-%`]
+  );
+  let nextNum = 1;
+  if (result.rows[0]) {
+    nextNum = parseInt(result.rows[0].bill_code.split('-')[2]) + 1;
+  }
+  return `${prefix}-${nextNum}`;
+};
+
 router.get('/', auth, async (req, res) => {
   try {
     let query = `
-      SELECT b.*, s.name as shop_name, g.name as godown_name,
-             d.name as driver_name
+      SELECT b.*, s.name as shop_name, g.name as godown_name, d.name as driver_name, r.name as route_name
       FROM bills b
       JOIN shops s ON b.shop_id = s.id
       JOIN godowns g ON b.godown_id = g.id
       LEFT JOIN drivers d ON b.driver_id = d.id
+      LEFT JOIN routes r ON s.route_id = r.id
     `;
     const params = [];
     if (req.user.role === 'godown') {
       query += ` WHERE b.godown_id = $1`;
       params.push(req.user.godown_id);
     }
-    query += ` ORDER BY b.created_at DESC`;
+    const shopSearch = req.query.shop;
+    if (shopSearch) {
+      query += req.user.role === 'godown' ? ` AND s.name ILIKE $2` : ` WHERE s.name ILIKE $1`;
+      params.push(`%${shopSearch}%`);
+      query += ` ORDER BY b.created_at DESC`;
+    } else {
+      query += ` ORDER BY b.created_at DESC LIMIT 50`;
+    }
     const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (err) {
@@ -68,11 +92,12 @@ router.post('/', auth, async (req, res) => {
     const pending = Math.max(0, total_amount - paid);
     const status = paid >= total_amount ? 'CLEARED' : paid > 0 ? 'PARTIAL' : 'PENDING';
 
-    const bill = await client.query(
-      `INSERT INTO bills (godown_id, shop_id, total_amount, paid_amount, pending_amount, status, driver_id, delivery_date)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [godown_id, shop_id, total_amount, paid, pending, status, driver_id || null, defaultDeliveryDate]
-    );
+    const bill_code = await generateBillCode(client);
+      const bill = await client.query(
+        `INSERT INTO bills (godown_id, shop_id, total_amount, paid_amount, pending_amount, status, driver_id, delivery_date, bill_code)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        [godown_id, shop_id, total_amount, paid, pending, status, driver_id || null, defaultDeliveryDate, bill_code]
+      );
     const bill_id = bill.rows[0].id;
 
     for (const item of items) {
@@ -113,6 +138,29 @@ router.post('/', auth, async (req, res) => {
          WHERE godown_id=$4 AND product_id=$5`,
         [new_cases, new_units, cost_deducted, godown_id, item.product_id]
       );
+    }
+
+    // Track returnables — for each bill item where product is_returnable, upsert returnables table
+    for (const item of items) {
+      const prodCheck = await client.query(
+        `SELECT is_returnable, bottles_per_case FROM products WHERE id=$1`, [item.product_id]
+      );
+      if (prodCheck.rows[0]?.is_returnable) {
+        const bpc = parseInt(prodCheck.rows[0].bottles_per_case);
+        const totalBottlesSold = (parseInt(item.quantity_cases || 0) * bpc) + parseInt(item.quantity_units || 0);
+        if (totalBottlesSold > 0) {
+          await client.query(
+            `INSERT INTO returnables (godown_id, shop_id, product_id, quantity_out, last_bill_id)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (godown_id, shop_id, product_id)
+             DO UPDATE SET
+               quantity_out = returnables.quantity_out + $4,
+               last_bill_id = $5,
+               updated_at = CURRENT_TIMESTAMP`,
+            [godown_id, shop_id, item.product_id, totalBottlesSold, bill_id]
+          );
+        }
+      }
     }
 
     await client.query('COMMIT');
@@ -211,6 +259,8 @@ router.delete('/:id', auth, async (req, res) => {
     const bill = await client.query(`SELECT * FROM bills WHERE id=$1`, [req.params.id]);
     if (!bill.rows[0]) return res.status(404).json({ error: 'Bill not found' });
     const godown_id = bill.rows[0].godown_id;
+
+    // Restore bill items inventory
     const items = await client.query(
       `SELECT bi.*, p.bottles_per_case FROM bill_items bi
        JOIN products p ON bi.product_id = p.id WHERE bi.bill_id = $1`,
@@ -234,15 +284,81 @@ router.delete('/:id', auth, async (req, res) => {
         );
       }
     }
+
+    // Restore free_products inventory linked to this bill, then delete them
+    const linkedFP = await client.query(
+      `SELECT * FROM free_products WHERE bill_id = $1`, [req.params.id]
+    );
+    for (const fp of linkedFP.rows) {
+      const prod = await client.query(
+        `SELECT bottles_per_case, selling_price_per_unit FROM products WHERE id=$1`, [fp.product_id]
+      );
+      if (prod.rows[0]) {
+        const bpc = parseInt(prod.rows[0].bottles_per_case);
+        const costRestored = fp.quantity_units * parseFloat(prod.rows[0].selling_price_per_unit || 0);
+        const inv = await client.query(
+          `SELECT quantity_cases, quantity_units FROM inventory WHERE godown_id=$1 AND product_id=$2`,
+          [fp.godown_id, fp.product_id]
+        );
+        if (inv.rows[0]) {
+          const currentBottles = (parseInt(inv.rows[0].quantity_cases) * bpc) + parseInt(inv.rows[0].quantity_units || 0);
+          const newTotal = currentBottles + parseInt(fp.quantity_units);
+          await client.query(
+            `UPDATE inventory SET quantity_cases=$1, quantity_units=$2, stock_value = stock_value + $3
+             WHERE godown_id=$4 AND product_id=$5`,
+            [Math.floor(newTotal / bpc), newTotal % bpc, costRestored, fp.godown_id, fp.product_id]
+          );
+        }
+      }
+    }
+    await client.query(`DELETE FROM free_products WHERE bill_id = $1`, [req.params.id]);
+
+    // Reverse returnables for this bill
+    const billItems = await client.query(
+      `SELECT bi.*, p.is_returnable, p.bottles_per_case FROM bill_items bi
+       JOIN products p ON bi.product_id = p.id WHERE bi.bill_id=$1`,
+      [req.params.id]
+    );
+    for (const item of billItems.rows) {
+      if (item.is_returnable) {
+        const bpc = parseInt(item.bottles_per_case);
+        const bottlesSold = (parseInt(item.quantity_cases || 0) * bpc) + parseInt(item.quantity_units || 0);
+        if (bottlesSold > 0) {
+          await client.query(
+            `UPDATE returnables SET
+               quantity_out = GREATEST(0, quantity_out - $1),
+               updated_at = CURRENT_TIMESTAMP
+             WHERE godown_id=$2 AND shop_id=$3 AND product_id=$4`,
+            [bottlesSold, godown_id, bill.rows[0].shop_id, item.product_id]
+          );
+        }
+      }
+    }
+
     await client.query(`DELETE FROM bill_items WHERE bill_id=$1`, [req.params.id]);
     await client.query(`DELETE FROM bills WHERE id=$1`, [req.params.id]);
     await client.query('COMMIT');
     res.json({ message: 'Bill deleted and inventory restored' });
+
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
+  }
+});
+
+router.get('/stock/:product_id', auth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT quantity_cases, quantity_units, bottles_per_case 
+       FROM inventory i JOIN products p ON i.product_id = p.id
+       WHERE i.godown_id = $1 AND i.product_id = $2`,
+      [req.user.godown_id, req.params.product_id]
+    );
+    res.json(result.rows[0] || null);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

@@ -56,7 +56,7 @@ function SearchableSelect({ options, value, onChange, placeholder = "Search...",
 const emptyItem = { product_id: "", quantity_cases: 0, quantity_units: 0, price_per_case: 0, price_per_unit: 0, bottles_per_case: 24, total_price: 0 };
 const emptyFreeItem = { product_id: "", quantity_units: "" };
 
-const labelStyle = { fontSize: "11px", color: "#888", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 600 };
+const labelStyle = { fontSize: "13px", color: "#111", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 600 };
 const actionBtn = (color) => ({ color, fontSize: "15px", background: "none", border: "none", cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" });
 
 export default function Bills() {
@@ -73,24 +73,29 @@ export default function Bills() {
   const [error, setError] = useState("");
   const [selectedBills, setSelectedBills] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [stockCache, setStockCache] = useState({});
   const [editLoading, setEditLoading] = useState(false);
   const { user } = useAuth();
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [shopSearch, setShopSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
 
   // Expanded rows state: { billId: items[] | "loading" }
   const [expandedItems, setExpandedItems] = useState({});
 
-  const makeTomorrow = () => { const t = new Date(); t.setDate(t.getDate() + 1); return t.toISOString().split("T")[0]; };
+  const makeToday = () => new Date().toISOString().split("T")[0];
 
   const [form, setForm] = useState({
-    shop_id: "", driver_id: "", delivery_date: makeTomorrow(), paid_amount: "",
+    shop_id: "", driver_id: "", delivery_date: makeToday(), paid_amount: "",
     items: [{ ...emptyItem }],
     freeItems: []
   });
 
-  const load = async () => {
-    const res = await api.get("/bills");
+  const load = async (shop = shopSearch) => {
+    const params = new URLSearchParams();
+    if (shop) params.append("shop", shop);
+    const res = await api.get(`/bills${params.toString() ? "?" + params.toString() : ""}`);
     let filtered = Array.isArray(res.data) ? res.data : [];
     if (startDate) { const start = new Date(startDate).setHours(0,0,0,0); filtered = filtered.filter(b => new Date(b.created_at).getTime() >= start); }
     if (endDate) { const end = new Date(endDate).setHours(23,59,59,999); filtered = filtered.filter(b => new Date(b.created_at).getTime() <= end); }
@@ -127,7 +132,7 @@ export default function Bills() {
   };
 
   const getStock = (productId) => {
-    const rows = inventory.filter(inv => inv.product_id === productId);
+    const rows = inventory.filter(inv => String(inv.product_id) === String(productId));
     if (!rows.length) return null;
     const totalCases = rows.reduce((s, r) => s + (parseInt(r.quantity_cases) || 0), 0);
     const totalUnits = rows.reduce((s, r) => s + (parseInt(r.quantity_units) || 0), 0);
@@ -139,6 +144,8 @@ export default function Bills() {
 
   const applyFilter = () => load();
   const clearFilter = () => { setStartDate(""); setEndDate(""); load(); };
+  const handleShopSearch = () => { setShopSearch(searchInput); load(searchInput); };
+  const clearShopSearch = () => { setShopSearch(""); setSearchInput(""); load(""); };
   const toggleSelect = (id) => setSelectedBills(prev => prev.includes(id) ? prev.filter(b => b !== id) : [...prev, id]);
   const toggleSelectAll = () => setSelectedBills(selectedBills.length === bills.length ? [] : bills.map(b => b.id));
 
@@ -152,8 +159,12 @@ export default function Bills() {
       productMap[item.product_name].bottles += parseInt(item.quantity_units || 0);
     });
     Object.keys(productMap).forEach(name => { const p = productMap[name]; const total = (p.cases * p.bpc) + p.bottles; p.totalCases = Math.floor(total / p.bpc); p.extraBottles = total % p.bpc; });
+    const driverNames = [...new Set(selectedBills.map(id => {
+      const b = bills.find(b => b.id === id);
+      return b?.driver_name || null;
+    }).filter(Boolean))].join(", ");
     const win = window.open('', '_blank');
-    win.document.write(`<html><head><title>Load Sheet</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'Courier New',monospace;font-size:14px;padding:20px;max-width:320px;margin:auto;}.title{font-size:20px;font-weight:bold;text-align:center;margin-bottom:4px;}.center{text-align:center;font-size:12px;color:#555;margin-bottom:8px;}.line{border-top:2px dashed #000;margin:10px 0;}table{width:100%;border-collapse:collapse;}th{text-align:left;border-bottom:2px solid #000;padding:5px 4px;font-size:12px;text-transform:uppercase;}td{padding:8px 4px;border-bottom:1px dotted #ccc;font-size:14px;}.qty{text-align:center;font-size:16px;font-weight:bold;}@media print{body{padding:5px;}}</style></head><body><div class="title">LOAD SHEET</div><div class="center">${new Date().toLocaleDateString('en-IN')} | ${selectedBills.length} bills</div><div class="line"></div><table><thead><tr><th>Product</th><th style="text-align:center">Cases</th><th style="text-align:center">Bottles</th><th style="text-align:right">Value</th></tr></thead><tbody>${Object.entries(productMap).map(([name, qty]) => { const value = (qty.totalCases * qty.pricePerCase) + (qty.extraBottles * qty.pricePerUnit); return `<tr><td style="font-weight:bold">${name}</td><td class="qty">${qty.totalCases}</td><td class="qty">${qty.extraBottles}</td><td style="text-align:right;font-weight:bold">₹${value.toLocaleString()}</td></tr>`; }).join('')}</tbody></table><div class="line"></div><div style="display:flex;justify-content:space-between;font-size:16px;font-weight:bold;padding:4px 0;"><span>TOTAL VALUE</span><span>₹${Object.values(productMap).reduce((s, qty) => s + (qty.totalCases * qty.pricePerCase) + (qty.extraBottles * qty.pricePerUnit), 0).toLocaleString()}</span></div><div class="line"></div><div class="center">Total Bills: ${selectedBills.length}</div></body></html>`);
+    win.document.write(`<html><head><title>Load Sheet</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'Courier New',monospace;font-size:14px;padding:20px;max-width:320px;margin:auto;}.title{font-size:20px;font-weight:bold;text-align:center;margin-bottom:4px;}.center{text-align:center;font-size:12px;color:#555;margin-bottom:8px;}.driver{text-align:center;font-size:15px;font-weight:bold;margin-bottom:4px;}.line{border-top:2px dashed #000;margin:10px 0;}table{width:100%;border-collapse:collapse;}th{text-align:left;border-bottom:2px solid #000;padding:5px 4px;font-size:12px;text-transform:uppercase;}td{padding:8px 4px;border-bottom:1px dotted #ccc;font-size:14px;}.qty{text-align:center;font-size:16px;font-weight:bold;}@media print{body{padding:5px;}}</style></head><body><div class="title">LOAD SHEET</div><div class="center">${new Date().toLocaleDateString('en-IN')} | ${selectedBills.length} bills</div><div class="center">${bills.find(b => b.id === selectedBills[0])?.route_name || ""}</div> ${driverNames ? `<div class="driver">Driver: ${driverNames}</div>` : ''}<div class="line"></div><table><thead><tr><th>Product</th><th style="text-align:center">Cases</th><th style="text-align:center">Bottles</th><th style="text-align:right">Value</th></tr></thead><tbody>${Object.entries(productMap).map(([name, qty]) => { const value = (qty.totalCases * qty.pricePerCase) + (qty.extraBottles * qty.pricePerUnit); return `<tr><td style="font-weight:bold">${name}</td><td class="qty">${qty.totalCases}</td><td class="qty">${qty.extraBottles}</td><td style="text-align:right;font-weight:bold">₹${value.toLocaleString()}</td></tr>`; }).join('')}</tbody></table><div class="line"></div><div style="display:flex;justify-content:space-between;font-size:16px;font-weight:bold;padding:4px 0;"><span>TOTAL VALUE</span><span>₹${Object.values(productMap).reduce((s, qty) => s + (qty.totalCases * qty.pricePerCase) + (qty.extraBottles * qty.pricePerUnit), 0).toLocaleString()}</span></div><div class="line"></div><div class="center">Total Bills: ${selectedBills.length}</div></body></html>`);
     win.document.close(); win.focus(); win.print(); win.close();
   };
 
@@ -164,6 +175,22 @@ export default function Bills() {
       const p = products.find(p => p.id === val);
       if (p) { items[i].price_per_case = parseFloat(p.selling_price) || 0; items[i].price_per_unit = parseFloat(p.selling_price_per_unit) || 0; items[i].bottles_per_case = parseInt(p.bottles_per_case) || 24; }
       else { items[i].price_per_case = 0; items[i].price_per_unit = 0; items[i].bottles_per_case = 24; }
+    }
+    if (val) {
+      api.get(`/bills/stock/${val}`).then(res => {
+        if (res.data) {
+          const { quantity_cases, quantity_units, bottles_per_case } = res.data;
+          const bpc = parseInt(bottles_per_case) || 24;
+          const cases = parseInt(quantity_cases) || 0;
+          const units = parseInt(quantity_units) || 0;
+          const parts = [];
+          if (cases > 0) parts.push(`${cases}C`);
+          if (units > 0) parts.push(`${units}B`);
+          setStockCache(prev => ({ ...prev, [val]: parts.join(" ") }));
+        } else {
+          setStockCache(prev => ({ ...prev, [val]: "0C" }));
+        }
+      }).catch(() => {});
     }
     items[i].total_price = (parseFloat(items[i].quantity_cases || 0) * parseFloat(items[i].price_per_case || 0)) + (parseFloat(items[i].quantity_units || 0) * parseFloat(items[i].price_per_unit || 0));
     setForm({ ...form, items });
@@ -194,9 +221,10 @@ export default function Bills() {
       if (!item.product_id) { setError("Please select a product for all items"); return; }
       if (!parseFloat(item.quantity_cases || 0) && !parseFloat(item.quantity_units || 0)) { setError("Please enter quantity for all items"); return; }
     }
-    setLoading(true);
-    try {
-      await api.post("/bills", {
+   setLoading(true);
+  try {
+      // Create bill and capture bill_id
+      const billRes = await api.post("/bills", {
         shop_id: form.shop_id, driver_id: form.driver_id, delivery_date: form.delivery_date,
         paid_amount: form.paid_amount || 0,
         items: form.items.map(item => ({
@@ -206,18 +234,31 @@ export default function Bills() {
           total_price: parseFloat(item.total_price || 0)
         }))
       });
+    
+      const billId = billRes.data.id;  // ✅ Capture bill ID
+    
+      // Link free products with bill_id
       for (const fi of form.freeItems) {
         if (!fi.product_id || !fi.quantity_units) continue;
-        await api.post("/free-products", { product_id: fi.product_id, quantity_units: parseInt(fi.quantity_units), shop_id: form.shop_id, given_date: form.delivery_date, notes: "Given with bill" });
-      }
-      setModal(false);
-      setForm({ shop_id: "", driver_id: "", delivery_date: makeTomorrow(), paid_amount: "", items: [{ ...emptyItem }], freeItems: [] });
-      load();
-    } catch (err) {
-      setError(err.response?.data?.error || "Failed to generate bill");
-    } finally {
-      setLoading(false);
-    }
+        await api.post("/free-products", { 
+          product_id: fi.product_id, 
+          quantity_units: parseInt(fi.quantity_units), 
+          shop_id: form.shop_id, 
+          given_date: form.delivery_date, 
+          notes: "Given with bill", 
+          sale_type: "DELIVERY",
+          bill_id: billId  // ✅ ADD THIS
+       });
+     }
+    
+     setModal(false);
+     setForm({ shop_id: "", driver_id: "", delivery_date: makeToday(), paid_amount: "", items: [{ ...emptyItem }], freeItems: [] });
+     load();
+   } catch (err) {
+     setError(err.response?.data?.error || "Failed to generate bill");
+   } finally {
+     setLoading(false);
+   }
   };
 
   const handleEdit = async () => {
@@ -244,7 +285,66 @@ export default function Bills() {
   const printBill = async (bill) => {
     const items = (await api.get(`/bills/${bill.id}/items`)).data;
     const win = window.open('', '_blank');
-    win.document.write(`<html><head><title>Bill #${bill.bill_number}</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'Courier New',monospace;font-size:13px;padding:20px;max-width:300px;margin:auto;}.center{text-align:center;}.bold{font-weight:bold;}.line{border-top:1px dashed #000;margin:8px 0;}.row{display:flex;justify-content:space-between;margin:4px 0;}.title{font-size:18px;font-weight:bold;text-align:center;margin-bottom:4px;}.small{font-size:11px;color:#555;}table{width:100%;border-collapse:collapse;margin:8px 0;}th{text-align:left;font-size:11px;border-bottom:1px solid #000;padding:3px 0;}td{padding:3px 0;font-size:12px;}.total-row{font-weight:bold;font-size:14px;}@media print{body{padding:0;}}</style></head><body><div class="title">INVENTORY</div><div class="center small">${bill.godown_name}</div><div class="line"></div><div class="row"><span>Bill #:</span><span class="bold">${bill.bill_number}</span></div><div class="row"><span>Date:</span><span>${new Date(bill.created_at).toLocaleDateString('en-IN')}</span></div><div class="row"><span>Shop:</span><span class="bold">${bill.shop_name}</span></div>${bill.driver_name ? `<div class="row"><span>Driver:</span><span>${bill.driver_name}</span></div>` : ''}${bill.delivery_date ? `<div class="row"><span>Delivery:</span><span>${new Date(bill.delivery_date).toLocaleDateString('en-IN')}</span></div>` : ''}<div class="line"></div><table><thead><tr><th>Product</th><th>Qty</th><th>Rate</th><th>Amt</th></tr></thead><tbody>${items.map(item => `<tr><td>${item.product_name}</td><td>${item.quantity_cases > 0 ? item.quantity_cases + 'C' : ''}${item.quantity_units > 0 ? ' ' + item.quantity_units + 'B' : ''}</td><td>₹${item.quantity_cases > 0 ? item.price_per_case : item.price_per_unit}</td><td>₹${Number(item.total_price).toLocaleString()}</td></tr>`).join('')}</tbody></table><div class="line"></div><div class="row total-row"><span>TOTAL</span><span>₹${Number(bill.total_amount).toLocaleString()}</span></div><div class="row"><span>Paid</span><span>₹${Number(bill.paid_amount || 0).toLocaleString()}</span></div><div class="row bold"><span>Pending</span><span>₹${Number(bill.pending_amount || 0).toLocaleString()}</span></div><div class="line"></div><div class="center small" style="margin-top:12px;">Thank you!</div></body></html>`);
+    win.document.write(`<html><head><title>Bill #${bill.bill_number}</title>
+      <style>
+        /* receipt-sized box + clean readable fonts + tabular numbers */
+        @media print { body{margin:0;padding:8px;} }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+          font-size:12px;
+          color:#111;
+          padding:20px;
+          max-width:300px;    /* keep receipt width */
+          width:300px;        /* explicit width for print */
+          margin:auto;
+          box-sizing:border-box;
+        }
+        .title { font-size:16px; font-weight:800; text-align:center; margin-bottom:4px; }
+        .shop-name { font-size:14px; font-weight:700; text-align:center; margin-bottom:6px; color:#111; }
+        .center { text-align:center; font-size:11px; color:#555; margin-bottom:8px; }
+        .line { border-top:1px dashed #000; margin:8px 0; }
+        .row{display:flex;justify-content:space-between;margin:4px 0;line-height:1;}
+        table{width:100%;border-collapse:collapse;margin:8px 0;font-size:12px;}
+        th{text-align:left;font-size:11px;border-bottom:1px solid #000;padding:3px 0;text-transform:uppercase;}
+        td{padding:3px 0;font-size:12px;}
+        .total-row{font-weight:700;font-size:13px;}
+        /* numeric font: tabular numbers for consistent alignment */
+        .num { font-family: "Roboto Mono", "Courier New", monospace; font-variant-numeric: tabular-nums; }
+        .right { text-align:right; }
+        @media print{ .title{font-size:15px;} body{max-width:300px;width:300px;} }
+      </style>
+    </head><body>
+      <div class="title">SHOP BILL</div>
+      <div class="shop-name">${bill.shop_name}</div>
+      <div class="center small"><span>Route: </span><span>${bill.route_name || bill.godown_name}</span></div>
+      <div class="line"></div>
+      <div class="row"><span>Bill No.:</span><span class="num">${bill.bill_code || '#' + bill.bill_number}</span></div>
+      <div class="row"><span>Date:</span><span class="num">${new Date(bill.created_at).toLocaleDateString('en-IN')}</span></div>
+      <div class="row"><span>Shop:</span><span class="num">${bill.shop_name}</span></div>
+      ${bill.driver_name ? `<div class="row"><span>Driver:</span><span class="num">${bill.driver_name}</span></div>` : ''}
+      ${bill.delivery_date ? `<div class="row"><span>Delivery:</span><span class="num">${new Date(bill.delivery_date).toLocaleDateString('en-IN')}</span></div>` : ''}
+      <div class="line"></div>
+      <table><thead><tr>
+        <th>Product</th><th style="text-align:center">Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Amt</th>
+      </tr></thead><tbody>
+      ${items.map(item => {
+        const qty = `${item.quantity_cases > 0 ? item.quantity_cases + 'C' : ''}${item.quantity_units > 0 ? ' ' + item.quantity_units + 'B' : ''}`;
+        const rate = item.quantity_cases > 0 ? item.price_per_case : item.price_per_unit;
+        return `<tr>
+          <td style="font-weight:600">${item.product_name}</td>
+          <td style="text-align:center">${qty || '—'}</td>
+          <td class="right num">₹${Number(rate).toLocaleString()}</td>
+          <td class="right num">₹${Number(item.total_price).toLocaleString()}</td>
+        </tr>`;
+      }).join('')}
+      </tbody></table>
+      <div class="line"></div>
+      <div class="row total-row"><span>TOTAL</span><span class="num">₹${Number(bill.total_amount).toLocaleString()}</span></div>
+      <div class="row"><span>Paid</span><span class="num">₹${Number(bill.paid_amount || 0).toLocaleString()}</span></div>
+      <div class="row bold"><span>Pending</span><span class="num">₹${Number(bill.pending_amount || 0).toLocaleString()}</span></div>
+      <div class="line"></div>
+      <div class="center small" style="margin-top:12px;">Thank you!</div>
+    </body></html>`);
     win.document.close(); win.focus(); win.print(); win.close();
   };
 
@@ -259,12 +359,41 @@ export default function Bills() {
           {selectedBills.length > 0 && <button onClick={printLoadSheet} className="btn-secondary">Print Load Sheet ({selectedBills.length})</button>}
           {user?.role !== "admin" && (
             <button className="btn-primary" onClick={() => {
-              setForm({ shop_id: "", driver_id: "", delivery_date: makeTomorrow(), paid_amount: "", items: [{ ...emptyItem }], freeItems: [] });
+              setForm({ shop_id: "", driver_id: "", delivery_date: makeToday(), paid_amount: "", items: [{ ...emptyItem }], freeItems: [] });
               setError(""); setModal(true);
             }}>+ New Bill</button>
           )}
         </div>
       </div>
+
+      {/* Shop Search */}
+      <div style={{ marginBottom: "16px", display: "flex", gap: "12px", alignItems: "flex-end" }}>
+        <div style={{ flex: 1 }}>
+          <label style={{ fontSize: "11px", color: "#888", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 600 }}>
+            Search by Shop Name
+          </label>
+          <input
+            className="input"
+            style={{ marginTop: "6px", width: "100%", boxSizing: "border-box" }}
+            placeholder="Type shop name and press Search..."
+            value={searchInput}
+            onChange={e => setSearchInput(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleShopSearch()}
+          />
+        </div>
+        <button className="btn-primary" onClick={handleShopSearch}>Search</button>
+        {shopSearch && <button className="btn-outline" onClick={clearShopSearch}>Clear</button>}
+      </div>
+      {shopSearch && (
+        <div style={{ marginBottom: "16px", background: "#fff8f8", borderLeft: "4px solid #C8102E", padding: "10px 16px", fontSize: "13px", fontFamily: "'Barlow Condensed', sans-serif", color: "#C8102E", fontWeight: 700, letterSpacing: "0.04em" }}>
+          Showing all bills for shops matching "{shopSearch}" — {bills.length} found
+        </div>
+      )}
+      {!shopSearch && (
+        <div style={{ marginBottom: "16px", fontSize: "13px", color: "#aaa", fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.04em" }}>
+          Showing latest 50 bills — search a shop name to see all its bills
+        </div>
+      )}
 
       {/* Date Filter */}
       <div style={{ background: "#f8f8f8", borderLeft: "4px solid #C8102E", padding: "16px", marginBottom: "24px", borderRadius: "4px" }}>
@@ -307,7 +436,7 @@ export default function Bills() {
                     <td style={{ textAlign: "center" }}>
                       <input type="checkbox" checked={selectedBills.includes(b.id)} onChange={() => toggleSelect(b.id)} style={{ accentColor: "#C8102E" }} />
                     </td>
-                    <td style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 700, fontSize: "20px", color: "#C8102E" }}>#{b.bill_number}</td>
+                    <td style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 700, fontSize: "20px", color: "#C8102E" }}>{b.bill_code || `#${b.bill_number}`}</td>
                     <td style={{ color: "#555", fontSize: "15px" }}>{new Date(b.created_at).toLocaleDateString("en-IN")}</td>
                     <td style={{ fontWeight: 600, fontSize: "16px" }}>{b.shop_name}</td>
                     <td style={{ color: "#888", fontSize: "15px" }}>{b.godown_name}</td>
@@ -420,13 +549,12 @@ export default function Bills() {
                 </div>
               </div>
               <div style={{ borderTop: "2px solid #f0f0f0", paddingTop: "16px", marginBottom: "16px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                <div style={{ marginBottom: "12px" }}>
                   <label style={labelStyle}>Products</label>
-                  <button type="button" onClick={addItem} style={{ color: "#C8102E", fontSize: "12px", background: "none", border: "none", cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>+ Add Product</button>
                 </div>
                 {form.items.map((item, i) => {
                   const selectedProduct = products.find(p => p.id === item.product_id);
-                  const stock = item.product_id ? getStock(item.product_id) : null;
+                  const stock = item.product_id ? (stockCache[item.product_id] ?? null) : null;
                   return (
                     <div key={i} style={{ background: "#f8f8f8", borderLeft: "3px solid #e0e0e0", padding: "12px", marginBottom: "10px" }}>
                       <div style={{ display: "flex", gap: "8px", alignItems: "flex-start", marginBottom: "8px" }}>
@@ -437,11 +565,11 @@ export default function Bills() {
                       </div>
                       {selectedProduct && (
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-                          <p style={{ fontSize: "11px", color: "#aaa", margin: 0, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.04em" }}>
+                          <p style={{ fontSize: "13px", color: "#111", margin: 0, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.04em" }}>
                             ₹{selectedProduct.selling_price}/case &nbsp;|&nbsp; ₹{selectedProduct.selling_price_per_unit}/bottle &nbsp;|&nbsp; {selectedProduct.bottles_per_case} bottles/case
                           </p>
                           {stock !== null && (
-                            <span style={{ fontSize: "11px", fontWeight: 700, color: "#444", fontFamily: "'IBM Plex Sans', sans-serif", background: "#e8e8e8", padding: "2px 8px", borderRadius: "3px" }}>
+                            <span style={{ fontSize: "13px", fontWeight: 800, color: "#fff", fontFamily: "'IBM Plex Sans', sans-serif", background: stock === "0C" ? "#C8102E" : "#111", padding: "4px 12px", borderRadius: "3px" }}>
                               Stock: {stock}
                             </span>
                           )}
@@ -450,11 +578,11 @@ export default function Bills() {
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", alignItems: "end" }}>
                         <div>
                           <label style={labelStyle}>Cases</label>
-                          <input type="number" className="input" style={{ marginTop: "4px" }} value={item.quantity_cases} onChange={e => updateItem(i, "quantity_cases", e.target.value)} min="0" placeholder="0" />
+                          <input type="number" className="input" style={{ marginTop: "4px" }} value={item.quantity_cases || ''} onChange={e => updateItem(i, "quantity_cases", e.target.value)} min="0" placeholder="0" />
                         </div>
                         <div>
                           <label style={labelStyle}>Extra Bottles</label>
-                          <input type="number" className="input" style={{ marginTop: "4px" }} value={item.quantity_units} onChange={e => updateItem(i, "quantity_units", e.target.value)} min="0" placeholder="0" />
+                          <input type="number" className="input" style={{ marginTop: "4px" }} value={item.quantity_units || ''} onChange={e => updateItem(i, "quantity_units", e.target.value)} min="0" placeholder="0" />
                         </div>
                         <div style={{ textAlign: "right" }}>
                           <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "1.4rem", color: "#111" }}>₹{parseFloat(item.total_price || 0).toLocaleString()}</span>
@@ -463,6 +591,7 @@ export default function Bills() {
                     </div>
                   );
                 })}
+                <button type="button" onClick={addItem} style={{ color: "#C8102E", fontSize: "15px", background: "none", border: "none", cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginTop: "8px", display: "block" }}>+ Add Product</button>
                 <div style={{ textAlign: "right", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: "1.3rem", marginTop: "8px", borderTop: "2px solid #111", paddingTop: "8px" }}>
                   Total: ₹{grandTotal.toLocaleString()}
                 </div>
@@ -480,6 +609,31 @@ export default function Bills() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
                   <div>
                     <label style={labelStyle}>Free Products <span style={{ color: "#888", fontWeight: 400, textTransform: "none", fontSize: "11px" }}>(optional)</span></label>
+                    {form.items.some(item => item.product_id && (parseFloat(item.quantity_cases||0) > 0 || parseFloat(item.quantity_units||0) > 0)) && (
+                      <div style={{ borderTop: "2px solid #f0f0f0", paddingTop: "16px", marginBottom: "20px" }}>
+                        <label style={labelStyle}>Bill Summary</label>
+                        <div style={{ marginTop: "10px" }}>
+                          {form.items.filter(item => item.product_id).map((item, i) => {
+                            const p = products.find(p => p.id === item.product_id);
+                            if (!p) return null;
+                            const qty = [parseInt(item.quantity_cases||0) > 0 && `${item.quantity_cases} Cases`, parseInt(item.quantity_units||0) > 0 && `${item.quantity_units} Bottles`].filter(Boolean).join(" + ") || "—";
+                              return (
+                                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 0", borderBottom: "1px solid #f0f0f0" }}>
+                                  <div>
+                                    <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "17px", textTransform: "uppercase", letterSpacing: "0.03em", color: "#111" }}>{p.name}</span>
+                                    <span style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: "14px", color: "#888", marginLeft: "14px", marginRight: "14px" }}>{qty}</span>
+                                  </div>
+                                  <span style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 700, fontSize: "17px", color: "#111" }}>₹{Number(item.total_price||0).toLocaleString()}</span>
+                                </div>
+                              );
+                          })}
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "12px", marginTop: "4px" }}>
+                            <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "13px", textTransform: "uppercase", letterSpacing: "0.08em", color: "#888" }}>Total</span>
+                            <span style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 800, fontSize: "20px", color: "#111" }}>₹{grandTotal.toLocaleString()}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     <p style={{ fontSize: "11px", color: "#bbb", margin: "2px 0 0", fontFamily: "'Barlow Condensed', sans-serif" }}>Won't affect inventory • Will appear in Free Products page</p>
                   </div>
                   <button type="button" onClick={addFreeItem} style={{ color: "#16a34a", fontSize: "12px", background: "none", border: "none", cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>+ Add Free Item</button>
@@ -523,7 +677,7 @@ export default function Bills() {
             <div className="modal-box" style={{ maxWidth: "400px" }}>
               <div style={{ borderBottom: "2px solid #f0f0f0", paddingBottom: "16px", marginBottom: "20px" }}>
                 <h2 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "2rem", fontWeight: 800, textTransform: "uppercase" }}>Edit Bill</h2>
-                <p style={{ fontSize: "13px", color: "#888", marginTop: "4px" }}>Bill #{b.bill_number} — {b.shop_name}</p>
+                <p style={{ fontSize: "13px", color: "#888", marginTop: "4px" }}>{b.bill_code || `#${b.bill_number}`} — {b.shop_name}</p>
               </div>
               <div style={{ marginBottom: "20px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: "1px solid #f0f0f0" }}>

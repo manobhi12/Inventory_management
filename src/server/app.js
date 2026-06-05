@@ -26,6 +26,8 @@ app.use("/api/breakage", require("./routes/breakage"));
 app.use("/api/bank-transactions", require("./routes/bankTransactions"));
 app.use("/api/drivers", require("./routes/drivers"));
 app.use("/api/online-transactions", require("./routes/onlineTransactions"));
+app.use('/api/transfers', require('./routes/transfers'));
+app.use('/api/returnables', require('./routes/returnables'));
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 

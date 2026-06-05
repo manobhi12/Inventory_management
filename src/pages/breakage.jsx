@@ -1,19 +1,70 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import api from "../api/axios";
 
 const today = new Date().toISOString().split("T")[0];
 
+function SearchableSelect({ options, value, onChange, placeholder = "Search..." }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const selected = options.find(o => o.value === value);
+  const filtered = query.trim() === "" ? options : options.filter(o => o.label.toLowerCase().includes(query.trim().toLowerCase()));
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const handleSelect = (opt) => { onChange(opt.value); setQuery(""); setOpen(false); };
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <input className="input" style={{ marginTop: "6px", width: "100%", boxSizing: "border-box" }}
+        value={open ? query : (selected ? selected.label : "")}
+        onChange={e => { setQuery(e.target.value); setOpen(true); if (!e.target.value) onChange(""); }}
+        onFocus={() => { setQuery(""); setOpen(true); }}
+        placeholder={placeholder} autoComplete="off" />
+      {open && (
+        <div style={{ position: "absolute", top: "calc(100% + 2px)", left: 0, right: 0, background: "#fff", border: "2px solid #e5e7eb", borderRadius: "4px", zIndex: 9999, maxHeight: "220px", overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.12)" }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding: "12px 16px", fontSize: "13px", color: "#aaa", fontFamily: "'Barlow Condensed', sans-serif", textTransform: "uppercase" }}>No results{query ? ` for "${query}"` : ""}</div>
+          ) : filtered.map((opt, i) => {
+            const isSelected = opt.value === value;
+            const lq = query.trim().toLowerCase();
+            const label = opt.label;
+            let display = label;
+            if (lq && label.toLowerCase().includes(lq)) {
+              const idx = label.toLowerCase().indexOf(lq);
+              display = (<>{label.slice(0, idx)}<strong style={{ color: "#C8102E" }}>{label.slice(idx, idx + lq.length)}</strong>{label.slice(idx + lq.length)}</>);
+            }
+            return (
+              <div key={i} onMouseDown={() => handleSelect(opt)}
+                style={{ padding: "10px 16px", fontSize: "14px", cursor: "pointer", background: isSelected ? "#fff8f8" : "transparent", borderLeft: isSelected ? "3px solid #C8102E" : "3px solid transparent", borderBottom: "1px solid #f3f4f6", fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.02em" }}
+                onMouseEnter={e => e.currentTarget.style.background = "#f9fafb"}
+                onMouseLeave={e => e.currentTarget.style.background = isSelected ? "#fff8f8" : "transparent"}
+              >{display}</div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Breakage() {
   const [breakages, setBreakages] = useState([]);
   const [products, setProducts] = useState([]);
+  const [shops, setShops] = useState([]);
   const [modal, setModal] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({ product_id: "", quantity_bottles: "", reason: "", breakage_date: today });
+  const [form, setForm] = useState({ shop_id: "", product_id: "", quantity_bottles: "", reason: "", breakage_date: today });
 
   const load = () => api.get("/breakage").then(r => setBreakages(r.data));
   useEffect(() => {
     load();
     api.get("/products").then(r => setProducts(r.data));
+    api.get("/shops").then(r => setShops(Array.isArray(r.data) ? r.data : []));
   }, []);
 
   const selectedProduct = products.find(p => p.id === form.product_id);
@@ -26,7 +77,7 @@ export default function Breakage() {
     try {
       await api.post("/breakage", form);
       setModal(false);
-      setForm({ product_id: "", quantity_bottles: "", reason: "", breakage_date: today });
+      setForm({ shop_id: "", product_id: "", quantity_bottles: "", reason: "", breakage_date: today });
       load();
     } catch (err) {
       alert(err.response?.data?.error || "Failed to save breakage");
@@ -48,12 +99,12 @@ export default function Breakage() {
   const totalPenalty = breakages.reduce((s, b) => s + parseFloat(b.total_penalty || 0), 0);
 
   const labelStyle = {
-    fontSize: "11px",
-    color: "#888",
+    fontSize: "13px",
+    color: "#111",
     textTransform: "uppercase",
     letterSpacing: "0.08em",
     fontFamily: "'Barlow Condensed', sans-serif",
-    fontWeight: 600
+    fontWeight: 700
   };
 
   const actionBtn = (color) => ({
@@ -108,7 +159,7 @@ export default function Breakage() {
         <table style={{ width: "100%", fontSize: "14px", borderCollapse: "collapse" }}>
           <thead className="table-head">
             <tr>
-              {["Date", "Product", "Godown", "Bottles Broken", "Penalty/Bottle", "Total Penalty", "Reason", "Actions"].map(h => (
+              {["Date", "Product", "Shop", "Godown", "Bottles Broken", "Penalty/Bottle", "Total Penalty", "Reason", "Actions"].map(h => (
                 <th key={h} style={{ padding: "12px 16px" }}>{h}</th>
               ))}
             </tr>
@@ -120,6 +171,7 @@ export default function Breakage() {
                   {new Date(b.breakage_date).toLocaleDateString("en-IN")}
                 </td>
                 <td style={{ fontWeight: 600, fontSize: "16px", padding: "16px" }}>{b.product_name}</td>
+                <td style={{ color: "#888", fontSize: "15px", padding: "16px" }}>{b.shop_name || <span style={{ color: "#ccc" }}>—</span>}</td>
                 <td style={{ color: "#888", fontSize: "15px", padding: "16px" }}>{b.godown_name}</td>
                 <td style={{ padding: "16px" }}>
                   <span className="badge-red">{b.quantity_bottles} bottles</span>
@@ -160,28 +212,39 @@ export default function Breakage() {
             </div>
 
             <form onSubmit={handleSubmit}>
+
+              {/* Shop */}
               <div style={{ marginBottom: "20px" }}>
-                <label style={labelStyle}>Product</label>
-                <select
-                  className="input"
-                  style={{ marginTop: "6px" }}
+                <label style={labelStyle}>Shop <span style={{ color: "#C8102E", fontWeight: 400, textTransform: "none", fontSize: "11px" }}>(optional)</span></label>
+                <SearchableSelect
+                  options={shops.map(s => ({ value: s.id, label: s.owner_name ? `${s.name} — ${s.owner_name}` : s.name }))}
+                  value={form.shop_id}
+                  onChange={val => setForm({ ...form, shop_id: val })}
+                  placeholder="Search shop name or owner..."
+                />
+              </div>
+
+              {/* Product */}
+              <div style={{ marginBottom: "20px" }}>
+                <label style={labelStyle}>Product <span style={{ color: "#C8102E" }}>*</span></label>
+                <SearchableSelect
+                  options={products.map(p => ({ value: p.id, label: p.name }))}
                   value={form.product_id}
-                  onChange={e => setForm({ ...form, product_id: e.target.value })}
+                  onChange={val => setForm({ ...form, product_id: val })}
+                  placeholder="Search product..."
                   required
-                >
-                  <option value="">Select Product</option>
-                  {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
+                />
                 {selectedProduct && (
-                  <p style={{ fontSize: "13px", color: "#888", marginTop: "6px" }}>
+                  <p style={{ fontSize: "13px", color: "#555", marginTop: "6px", fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.04em" }}>
                     Penalty: ₹{selectedProduct.breakage_penalty}/bottle
                   </p>
                 )}
               </div>
 
+              {/* Bottles + Date */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "20px" }}>
                 <div>
-                  <label style={labelStyle}>Bottles Broken</label>
+                  <label style={labelStyle}>No. of Bottles Broken <span style={{ color: "#C8102E" }}>*</span></label>
                   <input
                     type="number"
                     className="input"
@@ -190,6 +253,7 @@ export default function Breakage() {
                     onChange={e => setForm({ ...form, quantity_bottles: e.target.value })}
                     required
                     min="1"
+                    placeholder="0"
                   />
                 </div>
                 <div>
@@ -204,8 +268,9 @@ export default function Breakage() {
                 </div>
               </div>
 
-              <div style={{ marginBottom: "24px" }}>
-                <label style={labelStyle}>Breakage Location</label>
+              {/* Breakage Location */}
+              <div style={{ marginBottom: "20px" }}>
+                <label style={labelStyle}>Breakage Location <span style={{ color: "#C8102E" }}>*</span></label>
                 <select
                   className="input"
                   style={{ marginTop: "6px" }}
@@ -220,20 +285,26 @@ export default function Breakage() {
                 </select>
               </div>
 
+              {/* Penalty Summary */}
               {estimatedPenalty > 0 && (
-                <div style={{ background: "#fff5f5", borderLeft: "4px solid #C8102E", padding: "12px", marginBottom: "20px", borderRadius: "4px" }}>
-                  <p style={{ fontSize: "15px", color: "#C8102E", fontWeight: 700 }}>
-                    Penalty: ₹{estimatedPenalty.toLocaleString()}
-                  </p>
-                  <p style={{ fontSize: "13px", color: "#888", marginTop: "4px" }}>
-                    ({form.quantity_bottles} × ₹{selectedProduct?.breakage_penalty})
-                  </p>
+                <div style={{ background: "#f8f8f8", borderLeft: "4px solid #C8102E", padding: "16px", marginBottom: "20px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <p style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "11px", color: "#888", textTransform: "uppercase", letterSpacing: "0.08em", margin: 0 }}>Total Penalty</p>
+                      <p style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 800, fontSize: "1.8rem", color: "#C8102E", margin: "4px 0 0" }}>
+                        ₹{estimatedPenalty.toLocaleString()}
+                      </p>
+                    </div>
+                    <p style={{ fontSize: "13px", color: "#888", fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.04em", margin: 0 }}>
+                      {form.quantity_bottles} bottles × ₹{selectedProduct?.breakage_penalty}
+                    </p>
+                  </div>
                 </div>
               )}
 
               <div style={{ display: "flex", gap: "12px" }}>
                 <button type="submit" className="btn-primary" style={{ flex: 1 }} disabled={loading}>
-                  {loading ? "Saving..." : "Save"}
+                  {loading ? "Saving..." : "Save Breakage"}
                 </button>
                 <button type="button" className="btn-outline" style={{ flex: 1 }} onClick={() => setModal(false)}>
                   Cancel

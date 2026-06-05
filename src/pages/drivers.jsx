@@ -41,6 +41,8 @@ export default function Drivers() {
   const [tripForm, setTripForm] = useState(emptyTrip);
   const [editingTrip, setEditingTrip] = useState(null);
   const [tripLoading, setTripLoading] = useState(false);
+  const [loadSheetModal, setLoadSheetModal] = useState(null); // { id, name }
+  const [loadSheetDate, setLoadSheetDate] = useState(today);
 
   const loadDrivers = () => {
     api.get("/drivers").then(r => setDrivers(Array.isArray(r.data) ? r.data : []));
@@ -104,7 +106,9 @@ export default function Drivers() {
   const openEditTrip = (trip) => {
     setTripForm({
       amount_received: trip.amount_received,
-      notes: trip.notes || ""
+      notes: trip.notes || "",
+      trip_load: trip.trip_load || "",
+      load_returned: trip.load_returned || ""
     });
     setEditingTrip(trip);
     setTripModal(trip.driver_id);
@@ -131,6 +135,58 @@ export default function Drivers() {
       alert(err.response?.data?.error || "Failed to save trip");
     } finally {
       setTripLoading(false);
+    }
+  };
+
+  const printDriverLoadSheet = async (driverId, driverName, date) => {
+    try {
+      const res = await api.get(`/drivers/${driverId}/loadsheet?date=${date}`);
+      const { items, routes, bills } = res.data;
+      if (!bills.length) { alert("No bills found for this driver on selected date."); return; }
+
+      const totalValue = items.reduce((s, item) => {
+        const bpc = parseInt(item.bottles_per_case) || 24;
+        const totalCases = Math.floor((parseInt(item.quantity_cases) * bpc + parseInt(item.quantity_units)) / bpc);
+        const extraBottles = (parseInt(item.quantity_cases) * bpc + parseInt(item.quantity_units)) % bpc;
+        return s + (totalCases * parseFloat(item.price_per_case)) + (extraBottles * parseFloat(item.price_per_unit));
+      }, 0);
+
+      const win = window.open('', '_blank');
+      win.document.write(`<html><head><title>Load Sheet — ${driverName}</title>
+        <style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial;font-size:12px;padding:20px;max-width:300px;width:300px;margin:auto;}
+        .title{font-size:20px;font-weight:bold;text-align:center;margin-bottom:4px;}.center{text-align:center;font-size:12px;color:#111;margin-bottom:8px;}
+        .driver{text-align:center;font-size:15px;font-weight:bold;margin-bottom:4px;}.line{border-top:2px dashed #000;margin:10px 0;}
+        table{width:100%;border-collapse:collapse;}th{text-align:left;border-bottom:2px solid #000;padding:5px 4px;font-size:12px;text-transform:uppercase;}
+        td{padding:8px 4px;border-bottom:1px dotted #ccc;font-size:14px;}.qty{text-align:center;font-size:16px;font-weight:bold;}
+        @media print{body{padding:5px;max-width:300px;width:300px;}}</style>
+      </head><body>
+        <div class="title">LOAD SHEET</div>
+        <div class="center">${new Date(date).toLocaleDateString('en-IN')} | ${bills.length} bill${bills.length > 1 ? 's' : ''}</div>
+        <div class="center">${routes.join(", ") || ""}</div>
+        <div class="driver">Driver: ${driverName}</div>
+        <div class="line"></div>
+        <table><thead><tr>
+          <th>Product</th><th style="text-align:center">Cases</th><th style="text-align:center">Bottles</th><th style="text-align:right">Value</th>
+        </tr></thead><tbody>
+        ${items.map(item => {
+          const bpc = parseInt(item.bottles_per_case) || 24;
+          const total = parseInt(item.quantity_cases) * bpc + parseInt(item.quantity_units);
+          const cases = Math.floor(total / bpc);
+          const bottles = total % bpc;
+          const value = (cases * parseFloat(item.price_per_case)) + (bottles * parseFloat(item.price_per_unit));
+          return `<tr><td style="font-weight:bold">${item.product_name}</td><td class="qty">${cases}</td><td class="qty">${bottles}</td><td style="text-align:right;font-weight:bold">₹${value.toLocaleString()}</td></tr>`;
+        }).join('')}
+        </tbody></table>
+        <div class="line"></div>
+        <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:bold;padding:4px 0;">
+          <span>TOTAL VALUE</span><span>₹${totalValue.toLocaleString()}</span>
+        </div>
+        <div class="line"></div>
+        <div class="center">Total Bills: ${bills.length}</div>
+      </body></html>`);
+      win.document.close(); win.focus(); win.print(); win.close();
+    } catch (err) {
+      alert("Failed to generate load sheet");
     }
   };
 
@@ -218,6 +274,7 @@ export default function Drivers() {
                     </td>
                     <td style={{ padding: "16px" }}>
                       <div style={{ display: "flex", gap: "16px" }}>
+                        <button onClick={() => { setLoadSheetModal({ id: d.id, name: d.name }); setLoadSheetDate(today); }} style={actionBtn("#7c3aed")}>Load Sheet</button>
                         <button onClick={() => openEdit(d)} style={actionBtn("#C8102E")}>Edit</button>
                         <button onClick={() => handleDelete(d.id)} style={actionBtn("#aaaaaa")}>Delete</button>
                       </div>
@@ -261,7 +318,7 @@ export default function Drivers() {
                           <table style={{ width: "100%", fontSize: "13px", borderCollapse: "collapse" }}>
                             <thead>
                               <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-                                {["Date", "Route", "Trip Amount (from bills)", "Received", "Balance", "Notes", "Actions"].map(h => (
+                                {["Date", "Route", "Trip Amount (from bills)", "Trip Load", "Returned", "Received", "Balance", "Notes", "Actions"].map(h => (
                                   <th key={h} style={{
                                     textAlign: "left",
                                     padding: "8px 12px",
@@ -287,6 +344,12 @@ export default function Drivers() {
                                     <td style={{ padding: "10px 12px", fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 700, fontSize: "16px" }}>
                                       ₹{Number(t.total_trip_amount).toLocaleString()}
                                       <span style={{ fontSize: "11px", color: "#aaa", fontWeight: 400, marginLeft: "4px" }}>auto</span>
+                                    </td>
+                                    <td style={{ padding: "10px 12px", fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 700, fontSize: "15px" }}>
+                                      {parseFloat(t.trip_load || 0) > 0 ? `₹${Number(t.trip_load).toLocaleString()}` : "—"}
+                                    </td>
+                                    <td style={{ padding: "10px 12px", fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 700, fontSize: "15px", color: "#16a34a" }}>
+                                      {parseFloat(t.load_returned || 0) > 0 ? `₹${Number(t.load_returned).toLocaleString()}` : "—"}
                                     </td>
                                     <td style={{ padding: "10px 12px", fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 700, fontSize: "16px", color: "#16a34a" }}>
                                       ₹{Number(t.amount_received).toLocaleString()}
@@ -391,6 +454,32 @@ export default function Drivers() {
         </div>
       )}
 
+      {/* Load Sheet Modal */}
+      {loadSheetModal && (
+        <div className="modal-overlay">
+          <div className="modal-box" style={{ maxWidth: "360px" }}>
+            <div style={{ borderBottom: "2px solid #f0f0f0", paddingBottom: "16px", marginBottom: "20px" }}>
+              <h2 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "2rem", fontWeight: 800, textTransform: "uppercase" }}>
+                Load Sheet
+              </h2>
+              <p style={{ fontSize: "13px", color: "#888", marginTop: "4px" }}>{loadSheetModal.name}</p>
+            </div>
+            <div style={{ marginBottom: "24px" }}>
+              <label style={labelStyle}>Select Date</label>
+              <input type="date" className="input" style={{ marginTop: "6px" }}
+                value={loadSheetDate} onChange={e => setLoadSheetDate(e.target.value)} />
+            </div>
+            <div style={{ display: "flex", gap: "12px" }}>
+              <button className="btn-primary" style={{ flex: 1 }}
+                onClick={() => { printDriverLoadSheet(loadSheetModal.id, loadSheetModal.name, loadSheetDate); setLoadSheetModal(null); }}>
+                Print
+              </button>
+              <button className="btn-outline" style={{ flex: 1 }} onClick={() => setLoadSheetModal(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add/Edit Trip Modal */}
       {tripModal && (
         <div className="modal-overlay">
@@ -482,6 +571,19 @@ export default function Drivers() {
                   </div>
                 </>
               )}
+
+              <div style={{ marginBottom: "20px" }}>
+                <label style={labelStyle}>Trip Load ₹</label>
+                <input type="number" className="input" style={{ marginTop: "6px" }}
+                  value={tripForm.trip_load || ""} onChange={e => setTripForm({ ...tripForm, trip_load: e.target.value })}
+                  min="0" placeholder="0" />
+              </div>
+              <div style={{ marginBottom: "20px" }}>
+                <label style={labelStyle}>Load Returned ₹</label>
+                <input type="number" className="input" style={{ marginTop: "6px" }}
+                  value={tripForm.load_returned || ""} onChange={e => setTripForm({ ...tripForm, load_returned: e.target.value })}
+                  min="0" placeholder="0" />
+              </div>
 
               <div style={{ marginBottom: "20px" }}>
                 <label style={labelStyle}>Amount Received ₹</label>

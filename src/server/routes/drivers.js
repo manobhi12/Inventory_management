@@ -89,12 +89,13 @@ router.get('/:id/trips', auth, async (req, res) => {
 
 // POST add trip
 router.post('/:id/trips', auth, async (req, res) => {
-  const { trip_date, route_id, amount_received, notes } = req.body;
+  const { trip_date, route_id, amount_received, notes, trip_load, load_returned } = req.body;
   try {
     const result = await pool.query(
-      `INSERT INTO driver_trips (driver_id, trip_date, route_id, amount_received, notes)
-       VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [req.params.id, trip_date, route_id || null, parseFloat(amount_received || 0), notes || null]
+      `INSERT INTO driver_trips (driver_id, trip_date, route_id, amount_received, notes, trip_load, load_returned)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [req.params.id, trip_date, route_id || null, parseFloat(amount_received || 0), notes || null,
+       parseFloat(trip_load || 0), parseFloat(load_returned || 0)]
     );
     // Return with calculated total and route name
     const full = await pool.query(
@@ -118,11 +119,11 @@ router.post('/:id/trips', auth, async (req, res) => {
 
 // PUT edit trip — only amount_received and notes editable
 router.put('/trips/:trip_id', auth, async (req, res) => {
-  const { amount_received, notes } = req.body;
+  const { amount_received, notes, trip_load, load_returned } = req.body;
   try {
     const result = await pool.query(
-      `UPDATE driver_trips SET amount_received=$1, notes=$2 WHERE id=$3 RETURNING *`,
-      [parseFloat(amount_received || 0), notes || null, req.params.trip_id]
+      `UPDATE driver_trips SET amount_received=$1, notes=$2, trip_load=$3, load_returned=$4 WHERE id=$5 RETURNING *`,
+      [parseFloat(amount_received || 0), notes || null, parseFloat(trip_load || 0), parseFloat(load_returned || 0), req.params.trip_id]
     );
     const full = await pool.query(
       `SELECT
@@ -148,6 +149,43 @@ router.delete('/trips/:trip_id', auth, async (req, res) => {
   try {
     await pool.query(`DELETE FROM driver_trips WHERE id=$1`, [req.params.trip_id]);
     res.json({ message: 'Deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET driver load sheet — all bills for a driver on a date
+router.get('/:id/loadsheet', auth, async (req, res) => {
+  const { date } = req.query;
+  try {
+    const bills = await pool.query(
+      `SELECT b.id, b.total_amount, r.name as route_name
+       FROM bills b
+       JOIN shops s ON s.id = b.shop_id
+       LEFT JOIN routes r ON r.id = s.route_id
+       WHERE b.driver_id = $1 AND b.delivery_date = $2 AND b.godown_id = $3`,
+      [req.params.id, date, req.user.godown_id]
+    );
+    if (!bills.rows.length) return res.json({ bills: [], items: [] });
+
+    const billIds = bills.rows.map(b => b.id);
+    const items = await pool.query(
+      `SELECT bi.product_id, p.name as product_name, p.bottles_per_case,
+              SUM(bi.quantity_cases) as quantity_cases,
+              SUM(bi.quantity_units) as quantity_units,
+              MAX(bi.price_per_case) as price_per_case,
+              MAX(bi.price_per_unit) as price_per_unit
+       FROM bill_items bi
+       JOIN products p ON p.id = bi.product_id
+       WHERE bi.bill_id = ANY($1)
+       GROUP BY bi.product_id, p.name, p.bottles_per_case`,
+      [billIds]
+    );
+    res.json({
+      bills: bills.rows,
+      items: items.rows,
+      routes: [...new Set(bills.rows.map(b => b.route_name).filter(Boolean))]
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

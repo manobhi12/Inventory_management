@@ -7,7 +7,7 @@ router.get('/', auth, async (req, res) => {
   const result = await pool.query(`
     SELECT p.*, c.name as company_name 
     FROM products p LEFT JOIN companies c ON p.company_id = c.id
-    ORDER BY p.created_at DESC
+    ORDER BY p.name ASC
   `);
   res.json(result.rows);
 });

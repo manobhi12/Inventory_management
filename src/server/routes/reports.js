@@ -830,9 +830,9 @@ router.get('/dashboard', auth, async (req, res) => {
   try {
     const [
       stockVal, shopSales, counterSales, totalExpenses,
-      pendingBills, pendingPurchases, purchases, cashFlow
+      pendingBills, pendingPurchases, purchases, cashFlow, freeProductsVal
     ] = await Promise.all([
-      pool.query(`SELECT COALESCE(SUM(stock_value), 0) as total FROM inventory ${gFilter}`),
+      pool.query(`SELECT COALESCE(SUM((i.quantity_cases * p.selling_price) + (i.quantity_units * p.selling_price_per_unit)), 0) as total FROM inventory i JOIN products p ON i.product_id = p.id ${gid ? `WHERE i.godown_id = '${gid}'` : ''}`),
       pool.query(`SELECT COALESCE(SUM(b.total_amount), 0) as total FROM bills b WHERE DATE(b.created_at) >= ${dateFilter} ${gBillsAnd}`),
       pool.query(`SELECT COALESCE(SUM(cs.total_amount), 0) as total FROM counter_sales cs WHERE DATE(cs.created_at) >= ${dateFilter} ${gCsAnd}`),
       pool.query(`SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE DATE(created_at) >= ${dateFilter} ${gAnd}`),
@@ -840,7 +840,8 @@ router.get('/dashboard', auth, async (req, res) => {
       pool.query(`SELECT COALESCE(SUM(total_amount - COALESCE(paid_amount, 0)), 0) as total FROM purchases WHERE payment_status != 'PAID' ${gAnd}`),
       pool.query(`SELECT COALESCE(SUM(p.total_amount), 0) as total FROM purchases p WHERE DATE(p.purchase_date) >= ${dateFilter} ${gPuAnd}`),
       gid ? pool.query(`SELECT COALESCE(SUM(CASE WHEN type = 'DEPOSIT' THEN amount ELSE 0 END), 0) as total_deposits, COALESCE(SUM(CASE WHEN type = 'WITHDRAWAL' THEN amount ELSE 0 END), 0) as total_withdrawals FROM bank_transactions WHERE godown_id = $1`, [gid])
-          : pool.query(`SELECT COALESCE(SUM(CASE WHEN type = 'DEPOSIT' THEN amount ELSE 0 END), 0) as total_deposits, COALESCE(SUM(CASE WHEN type = 'WITHDRAWAL' THEN amount ELSE 0 END), 0) as total_withdrawals FROM bank_transactions`)
+          : pool.query(`SELECT COALESCE(SUM(CASE WHEN type = 'DEPOSIT' THEN amount ELSE 0 END), 0) as total_deposits, COALESCE(SUM(CASE WHEN type = 'WITHDRAWAL' THEN amount ELSE 0 END), 0) as total_withdrawals FROM bank_transactions`),
+      pool.query(`SELECT COALESCE(SUM(fp.quantity_units * p.selling_price_per_unit), 0) as total FROM free_products fp JOIN products p ON fp.product_id = p.id WHERE DATE(fp.created_at) >= ${dateFilter} ${gid ? `AND fp.godown_id = '${gid}'` : ''}`)
     ]);
 
     const billsPaidRes = await pool.query(`SELECT COALESCE(SUM(paid_amount), 0) as total FROM bills WHERE 1=1 ${gAnd}`);
@@ -864,6 +865,7 @@ router.get('/dashboard', auth, async (req, res) => {
       total_expenses: totalExpenses.rows[0].total,
       pending_bills: pendingBills.rows[0].total,
       pending_purchases: pendingPurchases.rows[0].total,
+      free_products_value: freeProductsVal.rows[0].total,
       cash_in_hand: cashInHand,
       cash_in_bank: cashInBank
     });
