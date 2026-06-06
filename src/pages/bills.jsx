@@ -144,8 +144,8 @@ export default function Bills() {
 
   const applyFilter = () => load();
   const clearFilter = () => { setStartDate(""); setEndDate(""); load(); };
-  const handleShopSearch = () => { setShopSearch(searchInput); load(searchInput); };
-  const clearShopSearch = () => { setShopSearch(""); setSearchInput(""); load(""); };
+  const handleShopSearch = (val) => { setShopSearch(val); load(val); };
+  const clearShopSearch = () => { setShopSearch(""); setSearchInput(""); handleShopSearch(""); };
   const toggleSelect = (id) => setSelectedBills(prev => prev.includes(id) ? prev.filter(b => b !== id) : [...prev, id]);
   const toggleSelectAll = () => setSelectedBills(selectedBills.length === bills.length ? [] : bills.map(b => b.id));
 
@@ -375,13 +375,12 @@ export default function Bills() {
           <input
             className="input"
             style={{ marginTop: "6px", width: "100%", boxSizing: "border-box" }}
-            placeholder="Type shop name and press Search..."
+            placeholder="Search shop name..."
             value={searchInput}
-            onChange={e => setSearchInput(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && handleShopSearch()}
+            onChange={e => { setSearchInput(e.target.value); handleShopSearch(e.target.value); }}
           />
         </div>
-        <button className="btn-primary" onClick={handleShopSearch}>Search</button>
+        <button className="btn-primary" onClick={() => handleShopSearch(searchInput)}>Search</button>
         {shopSearch && <button className="btn-outline" onClick={clearShopSearch}>Clear</button>}
       </div>
       {shopSearch && (

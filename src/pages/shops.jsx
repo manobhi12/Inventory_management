@@ -11,7 +11,7 @@ export default function Shops() {
   const [form, setForm] = useState(empty);
   const [editing, setEditing] = useState(null);
   const [expandedShop, setExpandedShop] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
 
   // Cash payment modal
   const [cashModal, setCashModal] = useState(null); // shop object
@@ -99,6 +99,16 @@ export default function Shops() {
         <button className="btn-primary" onClick={openAdd}>+ Add Shop</button>
       </div>
 
+      <div style={{ marginBottom: "16px" }}>
+        <input
+          className="input"
+          placeholder="Search shop name or owner..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ maxWidth: "360px" }}
+       />
+      </div>
+
       {/* Table */}
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
         <table style={{ width: "100%", fontSize: "14px", borderCollapse: "collapse" }}>
@@ -110,7 +120,11 @@ export default function Shops() {
             </tr>
           </thead>
           <tbody>
-            {shops.map(s => {
+            {shops.filter(s => {
+              const q = search.trim().toLowerCase();
+              if (!q) return true;
+              return s.name?.toLowerCase().includes(q) || s.owner_name?.toLowerCase().includes(q);
+            }).map(s => {
               const stats = getShopStats(s.id);
               const isExpanded = expandedShop === s.id;
               const hasUnpaid = stats.unpaidBills.length > 0;
@@ -192,7 +206,7 @@ export default function Shops() {
                           <tbody>
                             {stats.unpaidBills.map(b => (
                               <tr key={b.id} style={{ borderBottom: "1px solid #fee2e2" }}>
-                                <td style={{ padding: "10px 12px", fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 700, color: "#C8102E" }}>#{b.bill_number}</td>
+                                <td style={{ padding: "10px 12px", fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 700, color: "#C8102E" }}>{b.bill_code || `#${b.bill_number}`}</td>
                                 <td style={{ padding: "10px 12px", color: "#555" }}>{new Date(b.created_at).toLocaleDateString("en-IN")}</td>
                                 <td style={{ padding: "10px 12px", fontWeight: 600 }}>₹{Number(b.total_amount).toLocaleString()}</td>
                                 <td style={{ padding: "10px 12px", color: "#16a34a", fontWeight: 600 }}>₹{Number(b.paid_amount || 0).toLocaleString()}</td>
