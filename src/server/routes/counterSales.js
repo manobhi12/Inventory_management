@@ -65,12 +65,15 @@ router.get('/:id/items', auth, async (req, res) => {
 
 // POST — create full session with all items
 router.post('/', auth, async (req, res) => {
-  const { items, payment_mode } = req.body;
+  const { items, payment_mode, online_amount } = req.body;
   const godown_id = req.user.godown_id || req.body.godown_id;
   if (!godown_id) return res.status(400).json({ error: 'Godown required' });
   if (!items || !items.length) return res.status(400).json({ error: 'No items provided' });
 
-  const mode = payment_mode === 'ONLINE' ? 'ONLINE' : 'CASH';
+  const onlineAmt = parseFloat(online_amount || 0);
+  const mode = onlineAmt > 0 && onlineAmt < items.reduce((s, i) => s + parseInt(i.quantity_units) * parseFloat(i.price_per_unit || 0), 0)
+    ? 'SPLIT' : payment_mode === 'ONLINE' ? 'ONLINE' : 'CASH';
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -81,10 +84,13 @@ router.post('/', auth, async (req, res) => {
       return sum + (parseInt(item.quantity_units) * parseFloat(item.price_per_unit || 0));
     }, 0);
 
+    const finalOnline = mode === 'ONLINE' ? total_amount : mode === 'SPLIT' ? onlineAmt : 0;
+    const finalCash = total_amount - finalOnline;
+
     const session = await client.query(
-      `INSERT INTO counter_sales (godown_id, total_amount, payment_mode, sale_number)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [godown_id, total_amount, mode, sale_number]
+      `INSERT INTO counter_sales (godown_id, total_amount, payment_mode, sale_number, online_amount, cash_amount)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [godown_id, total_amount, mode, sale_number, finalOnline, finalCash]
     );
     const counter_sale_id = session.rows[0].id;
 
@@ -124,11 +130,11 @@ router.post('/', auth, async (req, res) => {
       );
     }
 
-    if (mode === 'ONLINE') {
+    if (mode === 'ONLINE' || mode === 'SPLIT') {
       await client.query(
         `INSERT INTO online_transactions (godown_id, is_counter_sale, amount, transaction_date, notes, counter_sale_id)
-         VALUES ($1, true, $2, CURRENT_DATE, 'Counter sale online payment', $3)`,
-        [godown_id, total_amount, counter_sale_id]
+         VALUES ($1, true, $2, CURRENT_DATE, $3, $4)`,
+        [godown_id, finalOnline, mode === 'SPLIT' ? `Counter sale - split payment (online portion)` : 'Counter sale online payment', counter_sale_id]
       );
     }
 
@@ -229,12 +235,12 @@ router.put('/items/:id', auth, async (req, res) => {
 
 // PUT /:id — update entire session (replace all items)
 router.put('/:id', auth, async (req, res) => {
-  const { items, payment_mode } = req.body;
+  const { items, payment_mode, online_amount } = req.body;
   const godown_id = req.user.godown_id || req.body.godown_id;
   if (!godown_id) return res.status(400).json({ error: 'Godown required' });
   if (!items || !items.length) return res.status(400).json({ error: 'No items provided' });
 
-  const mode = payment_mode === 'ONLINE' ? 'ONLINE' : 'CASH';
+  const mode = payment_mode === 'SPLIT' ? 'SPLIT' : payment_mode === 'ONLINE' ? 'ONLINE' : 'CASH';
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -308,17 +314,21 @@ router.put('/:id', auth, async (req, res) => {
     }
 
     // Update session total and payment mode
+    const onlineAmt = parseFloat(online_amount || 0);
+    const finalOnline = mode === 'ONLINE' ? total_amount : mode === 'SPLIT' ? onlineAmt : 0;
+    const finalCash = total_amount - finalOnline;
+
     const result = await client.query(
-      `UPDATE counter_sales SET total_amount=$1, payment_mode=$2 WHERE id=$3 RETURNING *`,
-      [total_amount, mode, req.params.id]
+      `UPDATE counter_sales SET total_amount=$1, payment_mode=$2, online_amount=$3, cash_amount=$4 WHERE id=$5 RETURNING *`,
+      [total_amount, mode, finalOnline, finalCash, req.params.id]
     );
 
     await client.query(`DELETE FROM online_transactions WHERE counter_sale_id = $1`, [req.params.id]);
-    if (mode === 'ONLINE') {
+    if (mode === 'ONLINE' || mode === 'SPLIT') {
       await client.query(
         `INSERT INTO online_transactions (godown_id, is_counter_sale, amount, transaction_date, notes, counter_sale_id)
-         VALUES ($1, true, $2, CURRENT_DATE, 'Counter sale online payment', $3)`,
-        [godown_id, total_amount, req.params.id]
+         VALUES ($1, true, $2, CURRENT_DATE, $3, $4)`,
+        [godown_id, finalOnline, mode === 'SPLIT' ? 'Counter sale - split payment (online portion)' : 'Counter sale online payment', req.params.id]
       );
     }
 

@@ -252,6 +252,126 @@ router.put('/:id/delivery', auth, async (req, res) => {
   }
 });
 
+router.put('/:id', auth, async (req, res) => {
+  const { items, paid_amount, driver_id, delivery_date } = req.body;
+  const godown_id = req.user.godown_id;
+  if (!godown_id) return res.status(400).json({ error: 'Admin cannot edit bills.' });
+  if (!items || !items.length) return res.status(400).json({ error: 'No items provided' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const bill = await client.query(`SELECT * FROM bills WHERE id=$1`, [req.params.id]);
+    if (!bill.rows[0]) return res.status(404).json({ error: 'Bill not found' });
+    const shop_id = bill.rows[0].shop_id;
+
+    // Restore inventory + returnables for old items
+    const oldItems = await client.query(
+      `SELECT bi.*, p.bottles_per_case, p.is_returnable, p.selling_price FROM bill_items bi
+       JOIN products p ON bi.product_id = p.id WHERE bi.bill_id=$1`,
+      [req.params.id]
+    );
+    for (const item of oldItems.rows) {
+      const bpc = parseInt(item.bottles_per_case);
+      const bottlesToRestore = (parseInt(item.quantity_cases || 0) * bpc) + parseInt(item.quantity_units || 0);
+      const costToRestore = parseFloat(item.total_price || 0);
+      const inv = await client.query(
+        `SELECT quantity_cases, quantity_units FROM inventory WHERE godown_id=$1 AND product_id=$2`,
+        [godown_id, item.product_id]
+      );
+      if (inv.rows[0]) {
+        const currentBottles = (parseInt(inv.rows[0].quantity_cases) * bpc) + parseInt(inv.rows[0].quantity_units || 0);
+        const newTotal = currentBottles + bottlesToRestore;
+        await client.query(
+          `UPDATE inventory SET quantity_cases=$1, quantity_units=$2, stock_value = stock_value + $3
+           WHERE godown_id=$4 AND product_id=$5`,
+          [Math.floor(newTotal / bpc), newTotal % bpc, costToRestore, godown_id, item.product_id]
+        );
+      }
+      if (item.is_returnable && bottlesToRestore > 0) {
+        await client.query(
+          `UPDATE returnables SET quantity_out = GREATEST(0, quantity_out - $1), updated_at = CURRENT_TIMESTAMP
+           WHERE godown_id=$2 AND shop_id=$3 AND product_id=$4`,
+          [bottlesToRestore, godown_id, shop_id, item.product_id]
+        );
+      }
+    }
+
+    // Delete old bill items
+    await client.query(`DELETE FROM bill_items WHERE bill_id=$1`, [req.params.id]);
+
+    // Insert new items + deduct inventory + update returnables
+    let total_amount = 0;
+    for (const item of items) {
+      const { product_id, quantity_cases, quantity_units, bottles_per_case, price_per_case, price_per_unit, total_price } = item;
+      const bpc = parseInt(bottles_per_case || 24);
+      const cases = parseInt(quantity_cases || 0);
+      const units = parseInt(quantity_units || 0);
+      const itemTotal = parseFloat(total_price || 0);
+      total_amount += itemTotal;
+
+      await client.query(
+        `INSERT INTO bill_items (bill_id, product_id, quantity_cases, quantity_units, bottles_per_case, price_per_case, price_per_unit, total_price)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [req.params.id, product_id, cases, units, bpc,
+         parseFloat(price_per_case || 0), parseFloat(price_per_unit || 0), itemTotal]
+      );
+
+      const inv = await client.query(
+        `SELECT quantity_cases, quantity_units FROM inventory WHERE godown_id=$1 AND product_id=$2`,
+        [godown_id, product_id]
+      );
+      if (!inv.rows[0]) throw new Error(`No inventory found for product`);
+
+      const prod = await client.query(
+        `SELECT selling_price, selling_price_per_unit, bottles_per_case, is_returnable FROM products WHERE id=$1`,
+        [product_id]
+      );
+      const soldBottles = (cases * bpc) + units;
+      const totalBottles = (parseInt(inv.rows[0].quantity_cases) * bpc) + parseInt(inv.rows[0].quantity_units || 0);
+      if (totalBottles < soldBottles) throw new Error(`Insufficient stock for product`);
+
+      const remaining = totalBottles - soldBottles;
+      const cost_deducted = soldBottles * (parseFloat(prod.rows[0].selling_price) / bpc);
+      await client.query(
+        `UPDATE inventory SET quantity_cases=$1, quantity_units=$2, stock_value = stock_value - $3
+         WHERE godown_id=$4 AND product_id=$5`,
+        [Math.floor(remaining / bpc), remaining % bpc, cost_deducted, godown_id, product_id]
+      );
+
+      if (prod.rows[0].is_returnable && soldBottles > 0) {
+        await client.query(
+          `INSERT INTO returnables (godown_id, shop_id, product_id, quantity_out, last_bill_id)
+           VALUES ($1,$2,$3,$4,$5)
+           ON CONFLICT (godown_id, shop_id, product_id)
+           DO UPDATE SET quantity_out = returnables.quantity_out + $4, last_bill_id = $5, updated_at = CURRENT_TIMESTAMP`,
+          [godown_id, shop_id, product_id, soldBottles, req.params.id]
+        );
+      }
+    }
+
+    // Update bill totals + payment + driver + delivery
+    const paid = Math.min(parseFloat(paid_amount || 0), total_amount);
+    const pending = Math.max(0, total_amount - paid);
+    const status = paid >= total_amount ? 'CLEARED' : paid > 0 ? 'PARTIAL' : 'PENDING';
+
+    const result = await client.query(
+      `UPDATE bills SET total_amount=$1, paid_amount=$2, pending_amount=$3, status=$4,
+       driver_id=$5, delivery_date=$6 WHERE id=$7 RETURNING *`,
+      [total_amount, paid, pending, status, driver_id || null, delivery_date || null, req.params.id]
+    );
+
+    await client.query('COMMIT');
+    res.json(result.rows[0]);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 router.delete('/:id', auth, async (req, res) => {
   const client = await pool.connect();
   try {

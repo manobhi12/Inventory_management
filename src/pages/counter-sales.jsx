@@ -80,6 +80,7 @@ export default function CounterSales() {
   const [items, setItems] = useState([{ ...emptyItem }]);
   const [freeItems, setFreeItems] = useState([]);
   const [paymentMode, setPaymentMode] = useState("CASH");
+  const [onlineAmount, setOnlineAmount] = useState("");
   const [newGodown, setNewGodown] = useState("");
   const [loading, setLoading] = useState(false);
   const [expandedItems, setExpandedItems] = useState({});
@@ -89,6 +90,7 @@ export default function CounterSales() {
   const [editSessionModal, setEditSessionModal] = useState(null); // holds session being edited
   const [editSessionItems, setEditSessionItems] = useState([]);
   const [editPaymentMode, setEditPaymentMode] = useState("CASH");
+  const [editOnlineAmount, setEditOnlineAmount] = useState("");
   const [editSessionLoading, setEditSessionLoading] = useState(false);
 
   const load = async () => {
@@ -159,6 +161,7 @@ export default function CounterSales() {
     try {
       const payload = {
         payment_mode: paymentMode,
+        online_amount: paymentMode === 'SPLIT' ? parseFloat(onlineAmount || 0) : undefined,
         godown_id: isAdmin ? newGodown : undefined,
         items: items.filter(item => item.product_id && getBottles(item) > 0).map(item => ({
           product_id: item.product_id,
@@ -187,6 +190,7 @@ export default function CounterSales() {
       setItems([{ ...emptyItem }]);
       setFreeItems([]);
       setPaymentMode("CASH");
+      setOnlineAmount("");
       setNewGodown("");
       load();
     } catch (err) {
@@ -271,6 +275,7 @@ export default function CounterSales() {
       });
       setEditSessionItems(loadedItems.length ? loadedItems : [{ ...emptyItem }]);
       setEditPaymentMode(sale.payment_mode || "CASH");
+      setEditOnlineAmount(sale.online_amount && parseFloat(sale.online_amount) > 0 ? sale.online_amount.toString() : "");
       setEditSessionModal(sale.id);
     } catch (err) {
       alert("Failed to load sale items");
@@ -304,6 +309,7 @@ export default function CounterSales() {
     try {
       const payload = {
         payment_mode: editPaymentMode,
+        online_amount: editPaymentMode === 'SPLIT' ? parseFloat(editOnlineAmount || 0) : undefined,
         items: editSessionItems.filter(item => item.product_id && getEditBottles(item) > 0).map(item => ({
           product_id: item.product_id,
           quantity_units: getEditBottles(item),
@@ -391,8 +397,14 @@ export default function CounterSales() {
                     <td style={{ color: "#888", fontSize: "14px", padding: "16px" }}>{istDate.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}</td>
                     {isAdmin && <td style={{ color: "#888", fontSize: "14px", padding: "16px" }}>{s.godown_name || "—"}</td>}
                     <td style={{ padding: "16px" }}>
-                      <span style={{ fontSize: "12px", fontWeight: 700, padding: "3px 10px", fontFamily: "'Barlow Condensed', sans-serif", background: isOnline ? "#eff6ff" : "#f0fdf4", color: isOnline ? "#2563eb" : "#16a34a", border: `1px solid ${isOnline ? "#bfdbfe" : "#bbf7d0"}`, borderRadius: "3px" }}>
-                        {isOnline ? "Online" : "Cash"}
+                      <span style={{
+                        fontSize: "12px", fontWeight: 700, padding: "3px 10px",
+                        fontFamily: "'Barlow Condensed', sans-serif", borderRadius: "3px",
+                        background: s.payment_mode === "ONLINE" ? "#eff6ff" : s.payment_mode === "SPLIT" ? "#f5f3ff" : "#f0fdf4",
+                        color: s.payment_mode === "ONLINE" ? "#2563eb" : s.payment_mode === "SPLIT" ? "#7c3aed" : "#16a34a",
+                        border: `1px solid ${s.payment_mode === "ONLINE" ? "#bfdbfe" : s.payment_mode === "SPLIT" ? "#ddd6fe" : "#bbf7d0"}`
+                      }}>
+                        {s.payment_mode === "ONLINE" ? "Online" : s.payment_mode === "SPLIT" ? "Split" : "Cash"}
                       </span>
                     </td>
                     <td style={{ padding: "16px" }}>
@@ -537,9 +549,29 @@ export default function CounterSales() {
               <div style={{ marginBottom: "20px" }}>
                 <label style={labelStyle}>Payment Mode</label>
                 <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
-                  <button type="button" style={modeBtn(paymentMode === "CASH", "#16a34a")} onClick={() => setPaymentMode("CASH")}>Cash</button>
-                  <button type="button" style={modeBtn(paymentMode === "ONLINE", "#2563eb")} onClick={() => setPaymentMode("ONLINE")}>Online</button>
+                  <button type="button" style={modeBtn(paymentMode === "CASH", "#16a34a")} onClick={() => { setPaymentMode("CASH"); setOnlineAmount(""); }}>Cash</button>
+                  <button type="button" style={modeBtn(paymentMode === "ONLINE", "#2563eb")} onClick={() => { setPaymentMode("ONLINE"); setOnlineAmount(""); }}>Online</button>
+                  <button type="button" style={modeBtn(paymentMode === "SPLIT", "#7c3aed")} onClick={() => setPaymentMode("SPLIT")}>Split</button>
                 </div>
+                {paymentMode === "SPLIT" && grandTotal > 0 && (
+                  <div style={{ marginTop: "12px", background: "#f5f3ff", borderLeft: "4px solid #7c3aed", padding: "14px" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                      <div>
+                        <label style={{ ...labelStyle, color: "#2563eb" }}>Online Amount ₹</label>
+                        <input type="number" className="input" style={{ marginTop: "6px" }}
+                          value={onlineAmount}
+                          onChange={e => setOnlineAmount(e.target.value)}
+                          placeholder="0" min="0" max={grandTotal} />
+                      </div>
+                      <div>
+                        <label style={{ ...labelStyle, color: "#16a34a" }}>Cash Amount ₹</label>
+                        <input type="number" className="input" style={{ marginTop: "6px", background: "#f0fdf4" }}
+                          value={onlineAmount !== "" ? Math.max(0, grandTotal - parseFloat(onlineAmount || 0)).toFixed(2) : ""}
+                          readOnly placeholder="Auto-calculated" />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div style={{ borderTop: "2px solid #f0f0f0", paddingTop: "16px", marginBottom: "20px" }}>
@@ -696,14 +728,37 @@ export default function CounterSales() {
               <div style={{ marginBottom: "20px" }}>
                 <label style={labelStyle}>Payment Mode</label>
                 <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
-                  <button type="button" style={modeBtn(editPaymentMode === "CASH", "#16a34a")} onClick={() => setEditPaymentMode("CASH")}>Cash</button>
-                  <button type="button" style={modeBtn(editPaymentMode === "ONLINE", "#2563eb")} onClick={() => setEditPaymentMode("ONLINE")}>Online</button>
+                  <button type="button" style={modeBtn(editPaymentMode === "CASH", "#16a34a")} onClick={() => { setEditPaymentMode("CASH"); setEditOnlineAmount(""); }}>Cash</button>
+                  <button type="button" style={modeBtn(editPaymentMode === "ONLINE", "#2563eb")} onClick={() => { setEditPaymentMode("ONLINE"); setEditOnlineAmount(""); }}>Online</button>
+                  <button type="button" style={modeBtn(editPaymentMode === "SPLIT", "#7c3aed")} onClick={() => setEditPaymentMode("SPLIT")}>Split</button>
                 </div>
+                {editPaymentMode === "SPLIT" && (() => {
+                  const editTotal = editSessionItems.reduce((s, item) => s + (getEditBottles(item) * parseFloat(item.price_per_unit || 0)), 0);
+                  return editTotal > 0 && (
+                    <div style={{ marginTop: "12px", background: "#f5f3ff", borderLeft: "4px solid #7c3aed", padding: "14px" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                        <div>
+                          <label style={{ ...labelStyle, color: "#2563eb" }}>Online Amount ₹</label>
+                          <input type="number" className="input" style={{ marginTop: "6px" }}
+                            value={editOnlineAmount}
+                            onChange={e => setEditOnlineAmount(e.target.value)}
+                            placeholder="0" min="0" max={editTotal} />
+                        </div>
+                        <div>
+                          <label style={{ ...labelStyle, color: "#16a34a" }}>Cash Amount ₹</label>
+                          <input type="number" className="input" style={{ marginTop: "6px", background: "#f0fdf4" }}
+                            value={editOnlineAmount !== "" ? Math.max(0, editTotal - parseFloat(editOnlineAmount || 0)).toFixed(2) : ""}
+                            readOnly placeholder="Auto-calculated" />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               <div style={{ display: "flex", gap: "12px" }}>
                 <button type="submit" className="btn-primary" style={{ flex: 1 }} disabled={editSessionLoading}>{editSessionLoading ? "Saving..." : "Save Changes"}</button>
-                <button type="button" className="btn-outline" style={{ flex: 1 }} onClick={() => { setEditSessionModal(null); setEditSessionItems([]); }}>Cancel</button>
+                <button type="button" className="btn-outline" style={{ flex: 1 }} onClick={() => { setEditSessionModal(null); setEditSessionItems([]); setEditOnlineAmount(""); }}>Cancel</button>
               </div>
             </form>
           </div>

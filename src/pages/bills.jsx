@@ -66,10 +66,12 @@ export default function Bills() {
   const [drivers, setDrivers] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [modal, setModal] = useState(false);
-  const [editModal, setEditModal] = useState(null);
+  const [editModal, setEditModal] = useState(null); // holds full bill object
+  const [editItems, setEditItems] = useState([]);
   const [editPaid, setEditPaid] = useState("");
   const [editDriverId, setEditDriverId] = useState("");
   const [editDeliveryDate, setEditDeliveryDate] = useState("");
+  const [editSessionLoading, setEditSessionLoading] = useState(false);
   const [error, setError] = useState("");
   const [selectedBills, setSelectedBills] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -261,13 +263,72 @@ export default function Bills() {
    }
   };
 
-  const handleEdit = async () => {
+  const openEditSession = async (b) => {
+    setEditSessionLoading(true);
+    try {
+      const res = await api.get(`/bills/${b.id}/items`);
+      setEditItems(res.data.map(item => ({
+        product_id: item.product_id,
+        quantity_cases: item.quantity_cases.toString(),
+        quantity_units: item.quantity_units.toString(),
+        bottles_per_case: item.bottles_per_case || 24,
+        price_per_case: item.price_per_case.toString(),
+        price_per_unit: item.price_per_unit.toString(),
+        total_price: item.total_price.toString()
+      })));
+      setEditPaid(b.paid_amount || "");
+      setEditDriverId(b.driver_id || "");
+      setEditDeliveryDate(b.delivery_date ? b.delivery_date.split("T")[0] : "");
+      setEditModal(b);
+    } catch {
+      alert("Failed to load bill items");
+    } finally {
+      setEditSessionLoading(false);
+    }
+  };
+
+  const updateEditItem = (i, field, val) => {
+    setEditItems(prev => prev.map((item, idx) => {
+      if (idx !== i) return item;
+      const next = { ...item, [field]: val };
+      if (field === "product_id") {
+        const p = products.find(p => p.id === val);
+        if (p) {
+          next.price_per_case = parseFloat(p.selling_price || 0).toString();
+          next.price_per_unit = parseFloat(p.selling_price_per_unit || 0).toString();
+          next.bottles_per_case = parseInt(p.bottles_per_case || 24);
+        }
+      }
+      const cases = parseInt(field === "quantity_cases" ? val : next.quantity_cases || 0);
+      const units = parseInt(field === "quantity_units" ? val : next.quantity_units || 0);
+      const bpc = parseInt(next.bottles_per_case || 24);
+      const ppc = parseFloat(field === "price_per_case" ? val : next.price_per_case || 0);
+      const ppu = parseFloat(field === "price_per_unit" ? val : next.price_per_unit || 0);
+      next.total_price = ((cases * ppc) + (units * ppu)).toString();
+      return next;
+    }));
+  };
+
+  const handleEditSession = async (e) => {
+    e.preventDefault();
     if (editLoading) return;
     setEditLoading(true);
     try {
-      await api.post(`/bills/${editModal}/payment`, { paid_amount: parseFloat(editPaid || 0) });
-      await api.put(`/bills/${editModal}/delivery`, { driver_id: editDriverId || null, delivery_date: editDeliveryDate || null });
-      setEditModal(null); setEditPaid(""); setEditDriverId(""); setEditDeliveryDate("");
+      await api.put(`/bills/${editModal.id}`, {
+        items: editItems.map(item => ({
+          product_id: item.product_id,
+          quantity_cases: parseInt(item.quantity_cases || 0),
+          quantity_units: parseInt(item.quantity_units || 0),
+          bottles_per_case: parseInt(item.bottles_per_case || 24),
+          price_per_case: parseFloat(item.price_per_case || 0),
+          price_per_unit: parseFloat(item.price_per_unit || 0),
+          total_price: parseFloat(item.total_price || 0)
+        })),
+        paid_amount: parseFloat(editPaid || 0),
+        driver_id: editDriverId || null,
+        delivery_date: editDeliveryDate || null
+      });
+      setEditModal(null); setEditItems([]); setEditPaid(""); setEditDriverId(""); setEditDeliveryDate("");
       load();
     } catch (err) {
       alert(err.response?.data?.error || "Failed to update bill");
@@ -420,7 +481,17 @@ export default function Bills() {
               <th style={{ width: "40px", textAlign: "center" }}>
                 <input type="checkbox" checked={selectedBills.length === bills.length && bills.length > 0} onChange={toggleSelectAll} style={{ accentColor: "#C8102E" }} />
               </th>
-              {["Bill #", "Date", "Shop", "Godown", "Driver", "Delivery", "Total", "Paid", "Actions"].map(h => <th key={h}>{h}</th>)}
+              {[
+                { label: "Bill #", width: "110px" },
+                { label: "Date", width: "90px" },
+                { label: "Shop", width: "" },
+                { label: "Godown", width: "100px" },
+                { label: "Driver", width: "80px" },
+                { label: "Delivery", width: "90px" },
+                { label: "Total", width: "130px" },
+                { label: "Paid", width: "80px" },
+                { label: "Actions", width: "160px" },
+              ].map(h => <th key={h.label} style={{ width: h.width || undefined }}>{h.label}</th>)}
             </tr>
           </thead>
           <tbody>
@@ -435,10 +506,10 @@ export default function Bills() {
                     <td style={{ textAlign: "center" }}>
                       <input type="checkbox" checked={selectedBills.includes(b.id)} onChange={() => toggleSelect(b.id)} style={{ accentColor: "#C8102E" }} />
                     </td>
-                    <td style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 700, fontSize: "20px", color: "#C8102E" }}>{b.bill_code || `#${b.bill_number}`}</td>
+                    <td style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 700, fontSize: "15px", color: "#C8102E", whiteSpace: "nowrap" }}>{b.bill_code || `#${b.bill_number}`}</td>
                     <td style={{ color: "#555", fontSize: "15px" }}>{new Date(b.created_at).toLocaleDateString("en-IN")}</td>
                     <td style={{ fontWeight: 600, fontSize: "16px" }}>{b.shop_name}</td>
-                    <td style={{ color: "#888", fontSize: "15px" }}>{b.godown_name}</td>
+                    <td style={{ color: "#888", fontSize: "13px", maxWidth: "100px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.godown_name}</td>
                     <td style={{ fontSize: "15px" }}>{b.driver_name || <span style={{ color: "#ccc" }}>—</span>}</td>
                     <td style={{ fontSize: "15px", color: "#555" }}>{b.delivery_date ? new Date(b.delivery_date).toLocaleDateString("en-IN") : <span style={{ color: "#ccc" }}>—</span>}</td>
 
@@ -463,11 +534,11 @@ export default function Bills() {
                       </div>
                     </td>
 
-                    <td style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 700, fontSize: "19px", color: "#16a34a" }}>₹{Number(b.paid_amount || 0).toLocaleString()}</td>
+                    <td style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 700, fontSize: "15px", color: "#16a34a" }}>₹{Number(b.paid_amount || 0).toLocaleString()}</td>
                     <td>
                       <div style={{ display: "flex", gap: "16px" }}>
                         <button onClick={() => printBill(b)} style={actionBtn("#2563eb")}>Print</button>
-                        <button onClick={() => { setEditModal(b.id); setEditPaid(b.paid_amount || ""); setEditDriverId(b.driver_id || ""); setEditDeliveryDate(b.delivery_date ? b.delivery_date.split("T")[0] : ""); }} style={actionBtn("#C8102E")}>Edit</button>
+                        <button onClick={() => openEditSession(b)} style={actionBtn("#C8102E")} disabled={editSessionLoading}>Edit</button>
                         <button onClick={() => handleDelete(b.id)} style={actionBtn("#aaaaaa")}>Delete</button>
                       </div>
                     </td>
@@ -667,60 +738,121 @@ export default function Bills() {
 
       {/* Edit Modal */}
       {editModal && (() => {
-        const b = bills.find(b => b.id === editModal);
-        if (!b) return null;
-        const newPending = Math.max(0, parseFloat(b.total_amount) - parseFloat(editPaid || 0));
-        const newStatus = parseFloat(editPaid || 0) >= parseFloat(b.total_amount) ? "CLEARED" : parseFloat(editPaid || 0) > 0 ? "PARTIAL" : "PENDING";
+        const b = editModal;
+        const editGrandTotal = editItems.reduce((s, item) => s + parseFloat(item.total_price || 0), 0);
+        const newPending = Math.max(0, editGrandTotal - parseFloat(editPaid || 0));
+        const newStatus = parseFloat(editPaid || 0) >= editGrandTotal ? "CLEARED" : parseFloat(editPaid || 0) > 0 ? "PARTIAL" : "PENDING";
+
         return (
           <div className="modal-overlay">
-            <div className="modal-box" style={{ maxWidth: "400px" }}>
+            <div className="modal-box" style={{ maxWidth: "720px", maxHeight: "90vh", overflowY: "auto" }}>
               <div style={{ borderBottom: "2px solid #f0f0f0", paddingBottom: "16px", marginBottom: "20px" }}>
                 <h2 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: "2rem", fontWeight: 800, textTransform: "uppercase" }}>Edit Bill</h2>
                 <p style={{ fontSize: "13px", color: "#888", marginTop: "4px" }}>{b.bill_code || `#${b.bill_number}`} — {b.shop_name}</p>
               </div>
-              <div style={{ marginBottom: "20px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: "1px solid #f0f0f0" }}>
-                  <span style={labelStyle}>Bill Total</span>
-                  <span style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 700, fontSize: "1.3rem" }}>₹{Number(b.total_amount).toLocaleString()}</span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: "1px solid #f0f0f0" }}>
-                  <span style={labelStyle}>Currently Paid</span>
-                  <span style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 700, fontSize: "1.3rem", color: "#16a34a" }}>₹{Number(b.paid_amount || 0).toLocaleString()}</span>
-                </div>
-              </div>
-              <div style={{ marginBottom: "20px" }}>
-                <label style={labelStyle}>Set Total Paid Amount</label>
-                <input type="number" className="input" style={{ marginTop: "6px", fontSize: "18px", fontWeight: 700 }} value={editPaid} onChange={e => setEditPaid(e.target.value)} placeholder="0" min="0" autoFocus />
-              </div>
-              {editPaid !== "" && (
-                <div style={{ background: "#f8f8f8", borderLeft: "4px solid #111", padding: "14px", marginBottom: "20px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "10px" }}>
-                    <span style={labelStyle}>Pending after save</span>
-                    <span style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 700, color: newPending > 0 ? "#C8102E" : "#16a34a" }}>₹{newPending.toLocaleString()}</span>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span style={labelStyle}>New Status</span>
-                    <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "13px", padding: "4px 12px", background: newStatus === "CLEARED" ? "#16a34a" : newStatus === "PARTIAL" ? "#C8102E" : "#e8e8e8", color: newStatus === "PENDING" ? "#444" : "white" }}>{newStatus}</span>
-                  </div>
-                </div>
-              )}
-              <div style={{ borderTop: "2px solid #f0f0f0", paddingTop: "16px", marginBottom: "20px" }}>
+
+              <form onSubmit={handleEditSession}>
+                {/* Items */}
                 <div style={{ marginBottom: "16px" }}>
-                  <label style={labelStyle}>Assign Driver</label>
-                  <select className="input" style={{ marginTop: "6px" }} value={editDriverId} onChange={e => setEditDriverId(e.target.value)}>
-                    <option value="">No Driver</option>
-                    {drivers.map(d => <option key={d.id} value={d.id}>{d.name}{d.phone ? ` — ${d.phone}` : ""}</option>)}
-                  </select>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                    <label style={labelStyle}>Products</label>
+                    <button type="button"
+                      onClick={() => setEditItems(prev => [...prev, { product_id: "", quantity_cases: "0", quantity_units: "0", bottles_per_case: 24, price_per_case: "0", price_per_unit: "0", total_price: "0" }])}
+                      style={{ color: "#C8102E", fontSize: "13px", background: "none", border: "none", cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                      + Add Product
+                    </button>
+                  </div>
+
+                  {editItems.map((item, i) => {
+                    const selectedProduct = products.find(p => p.id === item.product_id);
+                    return (
+                      <div key={i} style={{ background: "#f8f8f8", borderLeft: "3px solid #e0e0e0", padding: "12px", marginBottom: "10px" }}>
+                        <div style={{ display: "flex", gap: "8px", alignItems: "flex-start", marginBottom: "8px" }}>
+                          <div style={{ flex: 1 }}>
+                            <SearchableSelect options={productOptions} value={item.product_id}
+                              onChange={val => updateEditItem(i, "product_id", val)} placeholder="Search product..." required />
+                          </div>
+                          {editItems.length > 1 && (
+                            <button type="button" onClick={() => setEditItems(prev => prev.filter((_, idx) => idx !== i))}
+                              style={{ color: "#aaa", background: "none", border: "none", cursor: "pointer", fontSize: "16px", marginTop: "8px", flexShrink: 0 }}>✕</button>
+                          )}
+                        </div>
+                        {selectedProduct && (
+                          <p style={{ fontSize: "13px", color: "#111", margin: "0 0 10px", fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.04em" }}>
+                            ₹{selectedProduct.selling_price}/case &nbsp;|&nbsp; ₹{selectedProduct.selling_price_per_unit}/bottle &nbsp;|&nbsp; {selectedProduct.bottles_per_case} bottles/case
+                          </p>
+                        )}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", alignItems: "end" }}>
+                          <div>
+                            <label style={labelStyle}>Cases</label>
+                            <input type="number" className="input" style={{ marginTop: "4px" }} value={item.quantity_cases}
+                              onChange={e => updateEditItem(i, "quantity_cases", e.target.value)} min="0" placeholder="0" />
+                          </div>
+                          <div>
+                            <label style={labelStyle}>Extra Bottles</label>
+                            <input type="number" className="input" style={{ marginTop: "4px" }} value={item.quantity_units}
+                              onChange={e => updateEditItem(i, "quantity_units", e.target.value)} min="0" placeholder="0" />
+                          </div>
+                          <div style={{ textAlign: "right" }}>
+                            <p style={{ ...labelStyle, marginBottom: "4px" }}>Amount</p>
+                            <span style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 700, fontSize: "1.3rem", color: "#111" }}>
+                              ₹{parseFloat(item.total_price || 0).toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  <div style={{ textAlign: "right", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: "1.3rem", marginTop: "8px", borderTop: "2px solid #111", paddingTop: "8px" }}>
+                    Total: ₹{editGrandTotal.toLocaleString()}
+                  </div>
                 </div>
-                <div>
-                  <label style={labelStyle}>Delivery Date</label>
-                  <input type="date" className="input" style={{ marginTop: "6px" }} value={editDeliveryDate} onChange={e => setEditDeliveryDate(e.target.value)} />
+
+                {/* Payment */}
+                <div style={{ background: "#f8f8f8", borderLeft: "4px solid #C8102E", padding: "16px", marginBottom: "20px" }}>
+                  <label style={labelStyle}>Set Total Paid Amount</label>
+                  <input type="number" className="input" style={{ marginTop: "6px", fontSize: "18px", fontWeight: 700 }}
+                    value={editPaid} onChange={e => setEditPaid(e.target.value)} placeholder="0" min="0" />
+                  {editPaid !== "" && (
+                    <div style={{ marginTop: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ ...labelStyle, color: newPending > 0 ? "#C8102E" : "#16a34a" }}>
+                        Pending: ₹{newPending.toLocaleString()}
+                      </span>
+                      <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "13px", padding: "4px 12px",
+                        background: newStatus === "CLEARED" ? "#16a34a" : newStatus === "PARTIAL" ? "#C8102E" : "#e8e8e8",
+                        color: newStatus === "PENDING" ? "#444" : "white" }}>
+                        {newStatus}
+                      </span>
+                    </div>
+                  )}
                 </div>
-              </div>
-              <div style={{ display: "flex", gap: "12px" }}>
-                <button onClick={handleEdit} className="btn-primary" style={{ flex: 1 }} disabled={editLoading}>{editLoading ? "Saving..." : "Save"}</button>
-                <button onClick={() => { setEditModal(null); setEditPaid(""); setEditDriverId(""); setEditDeliveryDate(""); }} className="btn-outline" style={{ flex: 1 }}>Cancel</button>
-              </div>
+
+                {/* Driver + Delivery */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "20px" }}>
+                  <div>
+                    <label style={labelStyle}>Assign Driver</label>
+                    <select className="input" style={{ marginTop: "6px" }} value={editDriverId} onChange={e => setEditDriverId(e.target.value)}>
+                      <option value="">No Driver</option>
+                      {drivers.map(d => <option key={d.id} value={d.id}>{d.name}{d.phone ? ` — ${d.phone}` : ""}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Delivery Date</label>
+                    <input type="date" className="input" style={{ marginTop: "6px" }} value={editDeliveryDate} onChange={e => setEditDeliveryDate(e.target.value)} />
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: "12px" }}>
+                  <button type="submit" className="btn-primary" style={{ flex: 1 }} disabled={editLoading}>
+                    {editLoading ? "Saving..." : "Save Changes"}
+                  </button>
+                  <button type="button" className="btn-outline" style={{ flex: 1 }}
+                    onClick={() => { setEditModal(null); setEditItems([]); setEditPaid(""); setEditDriverId(""); setEditDeliveryDate(""); }}>
+                    Cancel
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         );
