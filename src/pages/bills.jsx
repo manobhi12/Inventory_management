@@ -362,12 +362,12 @@ export default function Bills() {
         }
         .title { font-size:16px; font-weight:800; text-align:center; margin-bottom:4px; }
         .shop-name { font-size:14px; font-weight:700; text-align:center; margin-bottom:6px; color:#111; }
-        .center { text-align:center; font-size:11px; color:#555; margin-bottom:8px; }
+        .center { text-align:center; font-size:11px; color:#111; margin-bottom:8px; }
         .line { border-top:1px dashed #000; margin:8px 0; }
-        .row{display:flex;justify-content:space-between;margin:4px 0;line-height:1;}
+        .row{display:flex;justify-content:space-between;margin:4px 0;line-height:1;font-weight:700;}
         table{width:100%;border-collapse:collapse;margin:8px 0;font-size:12px;}
-        th{text-align:left;font-size:11px;border-bottom:1px solid #000;padding:3px 0;text-transform:uppercase;}
-        td{padding:3px 0;font-size:12px;}
+        th{text-align:left;font-size:11px;border-bottom:1px solid #000;padding:3px 0;text-transform:uppercase;color:#111;}
+        td{padding:3px 0;font-size:12px;color:#111;}
         .total-row{font-weight:700;font-size:13px;}
         /* numeric font: tabular numbers for consistent alignment */
         .num { font-family: "Roboto Mono", "Courier New", monospace; font-variant-numeric: tabular-nums; }
@@ -379,11 +379,11 @@ export default function Bills() {
       <div class="shop-name">${bill.shop_name}</div>
       <div class="center small"><span>Route: </span><span>${bill.route_name || bill.godown_name}</span></div>
       <div class="line"></div>
-      <div class="row"><span>Bill No.:</span><span class="num">${bill.bill_code || '#' + bill.bill_number}</span></div>
-      <div class="row"><span>Date:</span><span class="num">${new Date(bill.created_at).toLocaleDateString('en-IN')}</span></div>
-      <div class="row"><span>Shop:</span><span class="num">${bill.shop_name}</span></div>
-      ${bill.driver_name ? `<div class="row"><span>Driver:</span><span class="num">${bill.driver_name}</span></div>` : ''}
-      ${bill.delivery_date ? `<div class="row"><span>Delivery:</span><span class="num">${new Date(bill.delivery_date).toLocaleDateString('en-IN')}</span></div>` : ''}
+      <div class="row"><strong>Bill No.:</strong><strong class="num">${bill.bill_code || '#' + bill.bill_number}</strong></div>
+      <div class="row"><strong>Date:</strong><strong class="num">${new Date(bill.created_at).toLocaleDateString('en-IN')}</strong></div>
+      <div class="row"><strong>Shop:</strong><strong class="num">${bill.shop_name}</strong></div>
+      ${bill.driver_name ? `<div class="row"><strong>Driver:</strong><strong class="num">${bill.driver_name}</strong></div>` : ''}
+      ${bill.delivery_date ? `<div class="row"><strong>Delivery:</strong><strong class="num">${new Date(bill.delivery_date).toLocaleDateString('en-IN')}</strong></div>` : ''}
       <div class="line"></div>
       <table><thead><tr>
         <th>Product</th><th style="text-align:center">Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Amt</th>
@@ -404,7 +404,7 @@ export default function Bills() {
       <div class="row"><span>Paid</span><span class="num">₹${Number(bill.paid_amount || 0).toLocaleString()}</span></div>
       <div class="row bold"><span>Pending</span><span class="num">₹${Number(bill.pending_amount || 0).toLocaleString()}</span></div>
       <div class="line"></div>
-      <div class="center small" style="margin-top:12px;">Thank you!</div>
+      <br/><br/><div class="center small" style="margin-top:12px;">Thank you!</div>
     </body></html>`);
     win.document.close(); win.focus(); win.print(); win.close();
   };
