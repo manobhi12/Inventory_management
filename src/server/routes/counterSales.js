@@ -13,7 +13,7 @@ const generateSaleNumber = async (client) => {
   const result = await client.query(
     `SELECT sale_number FROM counter_sales 
      WHERE sale_number LIKE $1 
-     ORDER BY sale_number DESC LIMIT 1`,
+     ORDER BY CAST(SPLIT_PART(sale_number, '-', 2) AS INTEGER) DESC LIMIT 1`,
     [`${prefix}-%`]
   );
 
