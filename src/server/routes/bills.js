@@ -76,7 +76,7 @@ router.get('/shop/:shop_id', auth, async (req, res) => {
 });
 
 router.post('/', auth, async (req, res) => {
-  const { shop_id, items, paid_amount, driver_id, delivery_date } = req.body;
+  const { shop_id, items, paid_amount, driver_id, delivery_date, payment_mode, online_amount } = req.body;
   const godown_id = req.user.godown_id;
   if (!godown_id) return res.status(400).json({ error: 'Admin cannot create bills.' });
 
@@ -93,12 +93,17 @@ router.post('/', auth, async (req, res) => {
     const pending = Math.max(0, total_amount - paid);
     const status = paid >= total_amount ? 'CLEARED' : paid > 0 ? 'PARTIAL' : 'PENDING';
 
+    const paidOnlineRaw = parseFloat(online_amount || 0);
+    const billMode = payment_mode === 'SPLIT' ? 'SPLIT' : payment_mode === 'ONLINE' ? 'ONLINE' : 'CASH';
+    const paidOnline = billMode === 'ONLINE' ? paid : billMode === 'SPLIT' ? Math.min(paidOnlineRaw, paid) : 0;
+    const paidCash = paid - paidOnline;
+
     const bill_code = await generateBillCode(client);
-      const bill = await client.query(
-        `INSERT INTO bills (godown_id, shop_id, total_amount, paid_amount, pending_amount, status, driver_id, delivery_date, bill_code)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-        [godown_id, shop_id, total_amount, paid, pending, status, driver_id || null, defaultDeliveryDate, bill_code]
-      );
+    const bill = await client.query(
+      `INSERT INTO bills (godown_id, shop_id, total_amount, paid_amount, pending_amount, status, driver_id, delivery_date, bill_code, payment_mode, online_amount, cash_amount)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+      [godown_id, shop_id, total_amount, paid, pending, status, driver_id || null, defaultDeliveryDate, bill_code, billMode, paidOnline, paidCash]
+    );
     const bill_id = bill.rows[0].id;
 
     for (const item of items) {
@@ -162,6 +167,15 @@ router.post('/', auth, async (req, res) => {
           );
         }
       }
+    }
+
+    // Handle online payment portion
+    if (paidOnline > 0) {
+      await client.query(
+        `INSERT INTO online_transactions (godown_id, shop_id, is_counter_sale, amount, transaction_date, notes, bill_id)
+         VALUES ($1, $2, false, $3, $4, $5, $6)`,
+        [godown_id, shop_id, paidOnline, defaultDeliveryDate, `Bill ${bill_code} - online payment portion`, bill_id]
+      );
     }
 
     await client.query('COMMIT');
@@ -254,7 +268,7 @@ router.put('/:id/delivery', auth, async (req, res) => {
 });
 
 router.put('/:id', auth, async (req, res) => {
-  const { items, paid_amount, driver_id, delivery_date } = req.body;
+  const { items, paid_amount, driver_id, delivery_date, payment_mode, online_amount } = req.body;
   const godown_id = req.user.godown_id;
   if (!godown_id) return res.status(400).json({ error: 'Admin cannot edit bills.' });
   if (!items || !items.length) return res.status(400).json({ error: 'No items provided' });
@@ -357,14 +371,30 @@ router.put('/:id', auth, async (req, res) => {
     const pending = Math.max(0, total_amount - paid);
     const status = paid >= total_amount ? 'CLEARED' : paid > 0 ? 'PARTIAL' : 'PENDING';
 
+    const paidOnlineRaw = parseFloat(online_amount || 0);
+    const billMode = payment_mode === 'SPLIT' ? 'SPLIT' : payment_mode === 'ONLINE' ? 'ONLINE' : 'CASH';
+    const paidOnline = billMode === 'ONLINE' ? paid : billMode === 'SPLIT' ? Math.min(paidOnlineRaw, paid) : 0;
+    const paidCash = paid - paidOnline;
+
     const result = await client.query(
       `UPDATE bills SET total_amount=$1, paid_amount=$2, pending_amount=$3, status=$4,
-       driver_id=$5, delivery_date=$6 WHERE id=$7 RETURNING *`,
-      [total_amount, paid, pending, status, driver_id || null, delivery_date || null, req.params.id]
+       driver_id=$5, delivery_date=$6, payment_mode=$7, online_amount=$8, cash_amount=$9 WHERE id=$10 RETURNING *`,
+      [total_amount, paid, pending, status, driver_id || null, delivery_date || null, billMode, paidOnline, paidCash, req.params.id]
     );
+
+    // Delete old online transaction for this bill and recreate if needed
+    await client.query(`DELETE FROM online_transactions WHERE bill_id = $1`, [req.params.id]);
+    if (paidOnline > 0) {
+      await client.query(
+        `INSERT INTO online_transactions (godown_id, shop_id, is_counter_sale, amount, transaction_date, notes, bill_id)
+         VALUES ($1, $2, false, $3, CURRENT_DATE, $4, $5)`,
+        [godown_id, shop_id, paidOnline, `Bill ${bill.rows[0].bill_code} - online payment portion`, req.params.id]
+      );
+    }
 
     await client.query('COMMIT');
     res.json(result.rows[0]);
+
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });

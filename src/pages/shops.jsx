@@ -17,6 +17,7 @@ export default function Shops() {
   const [cashModal, setCashModal] = useState(null); // shop object
   const [cashAmount, setCashAmount] = useState("");
   const [cashLoading, setCashLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const load = () => {
     api.get("/shops").then(r => setShops(Array.isArray(r.data) ? r.data : []));
