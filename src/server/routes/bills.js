@@ -9,13 +9,14 @@ const generateBillCode = async (client) => {
   const yy = String(today.getFullYear()).slice(-2);
   const prefix = `B-${dd}${mm}${yy}`;
   const result = await client.query(
-    `SELECT bill_code FROM bills WHERE bill_code LIKE $1 ORDER BY bill_code DESC LIMIT 1`,
-    [`${prefix}-%`]
-  );
-  let nextNum = 1;
-  if (result.rows[0]) {
-    nextNum = parseInt(result.rows[0].bill_code.split('-')[2]) + 1;
-  }
+  `SELECT bill_code FROM bills WHERE bill_code LIKE $1 
+   ORDER BY CAST(SPLIT_PART(bill_code, '-', 3) AS INTEGER) DESC LIMIT 1`,
+  [`${prefix}-%`]
+);
+let nextNum = 1;
+if (result.rows[0]) {
+  nextNum = parseInt(result.rows[0].bill_code.split('-')[2]) + 1;
+}
   return `${prefix}-${nextNum}`;
 };
 
