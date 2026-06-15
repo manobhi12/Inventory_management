@@ -19,7 +19,7 @@ router.post('/', auth, async (req, res) => {
   const godown_id = req.user.godown_id;
   const result = await pool.query(
     `INSERT INTO shops (godown_id, route_id, name, owner_name, phone) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-    [godown_id, route_id, name, owner_name, phone]
+    [godown_id, route_id || null, name, owner_name || null, phone || null]
   );
   apicache.clear();
   res.json(result.rows[0]);
@@ -29,7 +29,7 @@ router.put('/:id', auth, async (req, res) => {
   const { name, owner_name, phone, route_id } = req.body;
   const result = await pool.query(
     `UPDATE shops SET name=$1, owner_name=$2, phone=$3, route_id=$4 WHERE id=$5 RETURNING *`,
-    [name, owner_name, phone, route_id, req.params.id]
+    [name, owner_name || null, phone || null, route_id || null, req.params.id]
   );
   apicache.clear();
   res.json(result.rows[0]);

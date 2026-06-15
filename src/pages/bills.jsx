@@ -58,6 +58,7 @@ const emptyFreeItem = { product_id: "", quantity_units: "" };
 
 const labelStyle = { fontSize: "13px", color: "#111", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 600 };
 const actionBtn = (color) => ({ color, fontSize: "15px", background: "none", border: "none", cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" });
+const modeBtn = (active, color) => ({ flex: 1, padding: "8px", border: `2px solid ${active ? color : "#e5e7eb"}`, background: active ? color : "transparent", color: active ? "#fff" : "#888", cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "13px", textTransform: "uppercase", letterSpacing: "0.06em", borderRadius: "3px" });
 
 export default function Bills() {
   const [bills, setBills] = useState([]);
@@ -72,6 +73,9 @@ export default function Bills() {
   const [editDriverId, setEditDriverId] = useState("");
   const [editDeliveryDate, setEditDeliveryDate] = useState("");
   const [editSessionLoading, setEditSessionLoading] = useState(false);
+  const [editPaymentMode, setEditPaymentMode] = useState("CASH");
+  const [editOnlineAmount, setEditOnlineAmount] = useState("");
+  const [editPaidCash, setEditPaidCash] = useState("");
   const [error, setError] = useState("");
   const [selectedBills, setSelectedBills] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -90,6 +94,7 @@ export default function Bills() {
 
   const [form, setForm] = useState({
     shop_id: "", driver_id: "", delivery_date: makeToday(), paid_amount: "",
+    payment_mode: "CASH", online_amount: "",
     items: [{ ...emptyItem }],
     freeItems: []
   });
@@ -229,6 +234,8 @@ export default function Bills() {
       const billRes = await api.post("/bills", {
         shop_id: form.shop_id, driver_id: form.driver_id, delivery_date: form.delivery_date,
         paid_amount: form.paid_amount || 0,
+        payment_mode: form.payment_mode,
+        online_amount: form.payment_mode === 'SPLIT' ? parseFloat(form.online_amount || 0) : undefined,
         items: form.items.map(item => ({
           product_id: item.product_id, quantity_cases: parseInt(item.quantity_cases || 0),
           quantity_units: parseInt(item.quantity_units || 0), bottles_per_case: parseInt(item.bottles_per_case || 24),
@@ -254,7 +261,7 @@ export default function Bills() {
      }
     
      setModal(false);
-     setForm({ shop_id: "", driver_id: "", delivery_date: makeToday(), paid_amount: "", items: [{ ...emptyItem }], freeItems: [] });
+     setForm({ shop_id: "", driver_id: "", delivery_date: makeToday(), paid_amount: "", payment_mode: "CASH", online_amount: "", paid_amount_cash: "", items: [{ ...emptyItem }], freeItems: [] });
      load();
    } catch (err) {
      setError(err.response?.data?.error || "Failed to generate bill");
@@ -279,6 +286,13 @@ export default function Bills() {
       setEditPaid(b.paid_amount || "");
       setEditDriverId(b.driver_id || "");
       setEditDeliveryDate(b.delivery_date ? b.delivery_date.split("T")[0] : "");
+      setEditPaymentMode(b.payment_mode || "CASH");
+      setEditOnlineAmount(b.online_amount && parseFloat(b.online_amount) > 0 ? b.online_amount.toString() : "");
+      setEditPaidCash(
+        b.payment_mode === "SPLIT" && b.paid_amount && b.online_amount
+        ? (parseFloat(b.paid_amount) - parseFloat(b.online_amount)).toString()
+        : ""
+      );
       setEditModal(b);
     } catch {
       alert("Failed to load bill items");
@@ -326,9 +340,11 @@ export default function Bills() {
         })),
         paid_amount: parseFloat(editPaid || 0),
         driver_id: editDriverId || null,
-        delivery_date: editDeliveryDate || null
+        delivery_date: editDeliveryDate || null,
+        payment_mode: editPaymentMode,
+        online_amount: editPaymentMode === 'SPLIT' ? parseFloat(editOnlineAmount || 0) : undefined
       });
-      setEditModal(null); setEditItems([]); setEditPaid(""); setEditDriverId(""); setEditDeliveryDate("");
+      setEditModal(null); setEditItems([]); setEditPaid(""); setEditDriverId(""); setEditDeliveryDate(""); setEditPaymentMode("CASH"); setEditOnlineAmount(""); setEditPaidCash("");
       load();
     } catch (err) {
       alert(err.response?.data?.error || "Failed to update bill");
@@ -420,7 +436,7 @@ export default function Bills() {
           {selectedBills.length > 0 && <button onClick={printLoadSheet} className="btn-secondary">Print Load Sheet ({selectedBills.length})</button>}
           {user?.role !== "admin" && (
             <button className="btn-primary" onClick={() => {
-              setForm({ shop_id: "", driver_id: "", delivery_date: makeToday(), paid_amount: "", items: [{ ...emptyItem }], freeItems: [] });
+              setForm({ shop_id: "", driver_id: "", delivery_date: makeToday(), paid_amount: "", payment_mode: "CASH", online_amount: "", paid_amount_cash: "", items: [{ ...emptyItem }], freeItems: [] });
               setError(""); setModal(true);
             }}>+ New Bill</button>
           )}
@@ -667,12 +683,63 @@ export default function Bills() {
                 </div>
               </div>
               <div style={{ background: "#f8f8f8", borderLeft: "4px solid #C8102E", padding: "16px", marginBottom: "20px" }}>
-                <label style={labelStyle}>Amount Paid Now (0 if pending)</label>
-                <input type="number" className="input" style={{ marginTop: "6px" }} value={form.paid_amount} onChange={e => setForm({ ...form, paid_amount: e.target.value })} placeholder="0" min="0" />
-                {parseFloat(form.paid_amount) > 0 && (
-                  <p style={{ fontSize: "12px", color: "#C8102E", marginTop: "6px", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700 }}>
-                    Pending: ₹{Math.max(0, grandTotal - parseFloat(form.paid_amount || 0)).toLocaleString()}
-                  </p>
+                <label style={labelStyle}>Payment Mode</label>
+                <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+                  <button type="button" style={modeBtn(form.payment_mode === "CASH", "#16a34a")} onClick={() => setForm({ ...form, payment_mode: "CASH", online_amount: "", paid_amount: "", paid_amount_cash: "" })}>Cash</button>
+                  <button type="button" style={modeBtn(form.payment_mode === "ONLINE", "#2563eb")} onClick={() => setForm({ ...form, payment_mode: "ONLINE", online_amount: "", paid_amount: "", paid_amount_cash: "" })}>Online</button>
+                  <button type="button" style={modeBtn(form.payment_mode === "SPLIT", "#7c3aed")} onClick={() => setForm({ ...form, payment_mode: "SPLIT", online_amount: "", paid_amount: "", paid_amount_cash: "" })}>Split</button>
+                </div>
+
+                {form.payment_mode !== "SPLIT" && (
+                  <div style={{ marginTop: "14px" }}>
+                    <label style={labelStyle}>Amount Paid ₹</label>
+                    <input type="number" className="input" style={{ marginTop: "6px" }}
+                      value={form.paid_amount}
+                      onChange={e => setForm({ ...form, paid_amount: e.target.value })}
+                      placeholder="0" min="0" />
+                    {parseFloat(form.paid_amount) > 0 && (
+                      <p style={{ fontSize: "12px", color: "#C8102E", marginTop: "6px", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700 }}>
+                        Pending: ₹{Math.max(0, grandTotal - parseFloat(form.paid_amount || 0)).toLocaleString()}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {form.payment_mode === "SPLIT" && (
+                  <div style={{ marginTop: "12px", background: "#f5f3ff", borderLeft: "4px solid #7c3aed", padding: "14px" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                      <div>
+                        <label style={{ ...labelStyle, color: "#2563eb" }}>Online Amount ₹</label>
+                        <input type="number" className="input" style={{ marginTop: "6px" }}
+                          value={form.online_amount}
+                          onChange={e => {
+                            const online = parseFloat(e.target.value || 0);
+                            setForm({ ...form, online_amount: e.target.value, paid_amount: (online + parseFloat(form.paid_amount_cash || 0)).toString() });
+                          }}
+                          placeholder="0" min="0" />
+                      </div>
+                      <div>
+                        <label style={{ ...labelStyle, color: "#16a34a" }}>Cash Amount ₹</label>
+                        <input type="number" className="input" style={{ marginTop: "6px" }}
+                          value={form.paid_amount_cash || ""}
+                          onChange={e => {
+                            const cash = parseFloat(e.target.value || 0);
+                            setForm({ ...form, paid_amount_cash: e.target.value, paid_amount: (cash + parseFloat(form.online_amount || 0)).toString() });
+                          }}
+                          placeholder="0" min="0" />
+                      </div>
+                    </div>
+                    {(parseFloat(form.online_amount || 0) + parseFloat(form.paid_amount_cash || 0)) > 0 && (
+                      <div style={{ marginTop: "10px", display: "flex", justifyContent: "space-between" }}>
+                        <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "13px", color: "#7c3aed" }}>
+                          Total Paid: ₹{(parseFloat(form.online_amount || 0) + parseFloat(form.paid_amount_cash || 0)).toLocaleString()}
+                        </span>
+                        <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "13px", color: "#C8102E" }}>
+                          Pending: ₹{Math.max(0, grandTotal - parseFloat(form.online_amount || 0) - parseFloat(form.paid_amount_cash || 0)).toLocaleString()}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
               <div style={{ borderTop: "2px solid #f0f0f0", paddingTop: "16px", marginBottom: "20px" }}>
@@ -811,19 +878,73 @@ export default function Bills() {
 
                 {/* Payment */}
                 <div style={{ background: "#f8f8f8", borderLeft: "4px solid #C8102E", padding: "16px", marginBottom: "20px" }}>
-                  <label style={labelStyle}>Set Total Paid Amount</label>
-                  <input type="number" className="input" style={{ marginTop: "6px", fontSize: "18px", fontWeight: 700 }}
-                    value={editPaid} onChange={e => setEditPaid(e.target.value)} placeholder="0" min="0" />
-                  {editPaid !== "" && (
-                    <div style={{ marginTop: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ ...labelStyle, color: newPending > 0 ? "#C8102E" : "#16a34a" }}>
-                        Pending: ₹{newPending.toLocaleString()}
-                      </span>
-                      <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "13px", padding: "4px 12px",
-                        background: newStatus === "CLEARED" ? "#16a34a" : newStatus === "PARTIAL" ? "#C8102E" : "#e8e8e8",
-                        color: newStatus === "PENDING" ? "#444" : "white" }}>
-                        {newStatus}
-                      </span>
+                  <label style={labelStyle}>Payment Mode</label>
+                  <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+                    <button type="button" style={modeBtn(editPaymentMode === "CASH", "#16a34a")} onClick={() => { setEditPaymentMode("CASH"); setEditOnlineAmount(""); setEditPaid(""); setEditPaidCash(""); }}>Cash</button>
+                    <button type="button" style={modeBtn(editPaymentMode === "ONLINE", "#2563eb")} onClick={() => { setEditPaymentMode("ONLINE"); setEditOnlineAmount(""); setEditPaid(""); setEditPaidCash(""); }}>Online</button>
+                    <button type="button" style={modeBtn(editPaymentMode === "SPLIT", "#7c3aed")} onClick={() => { setEditPaymentMode("SPLIT"); setEditOnlineAmount(""); setEditPaid(""); setEditPaidCash(""); }}>Split</button>
+                  </div>
+
+                  {editPaymentMode !== "SPLIT" && (
+                    <div style={{ marginTop: "14px" }}>
+                      <label style={labelStyle}>Amount Paid ₹</label>
+                      <input type="number" className="input" style={{ marginTop: "6px", fontSize: "18px", fontWeight: 700 }}
+                        value={editPaid}
+                        onChange={e => setEditPaid(e.target.value)}
+                        placeholder="0" min="0" />
+                      {editPaid !== "" && (
+                        <div style={{ marginTop: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ ...labelStyle, color: newPending > 0 ? "#C8102E" : "#16a34a" }}>
+                            Pending: ₹{newPending.toLocaleString()}
+                          </span>
+                          <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "13px", padding: "4px 12px",
+                            background: newStatus === "CLEARED" ? "#16a34a" : newStatus === "PARTIAL" ? "#C8102E" : "#e8e8e8",
+                            color: newStatus === "PENDING" ? "#444" : "white" }}>
+                            {newStatus}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {editPaymentMode === "SPLIT" && (
+                    <div style={{ marginTop: "12px", background: "#f5f3ff", borderLeft: "4px solid #7c3aed", padding: "14px" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                        <div>
+                          <label style={{ ...labelStyle, color: "#2563eb" }}>Online Amount ₹</label>
+                          <input type="number" className="input" style={{ marginTop: "6px" }}
+                            value={editOnlineAmount}
+                            onChange={e => {
+                              const online = parseFloat(e.target.value || 0);
+                              const cash = parseFloat(editPaidCash || 0);
+                              setEditOnlineAmount(e.target.value);
+                              setEditPaid((online + cash).toString());
+                            }}
+                            placeholder="0" min="0" />
+                        </div>
+                        <div>
+                          <label style={{ ...labelStyle, color: "#16a34a" }}>Cash Amount ₹</label>
+                          <input type="number" className="input" style={{ marginTop: "6px" }}
+                            value={editPaidCash || ""}
+                            onChange={e => {
+                              const cash = parseFloat(e.target.value || 0);
+                              const online = parseFloat(editOnlineAmount || 0);
+                              setEditPaidCash(e.target.value);
+                              setEditPaid((cash + online).toString());
+                            }}
+                            placeholder="0" min="0" />
+                        </div>
+                      </div>
+                      {(parseFloat(editOnlineAmount || 0) + parseFloat(editPaidCash || 0)) > 0 && (
+                        <div style={{ marginTop: "10px", display: "flex", justifyContent: "space-between" }}>
+                          <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "13px", color: "#7c3aed" }}>
+                            Total Paid: ₹{(parseFloat(editOnlineAmount || 0) + parseFloat(editPaidCash || 0)).toLocaleString()}
+                          </span>
+                          <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: "13px", color: newPending > 0 ? "#C8102E" : "#16a34a" }}>
+                            Pending: ₹{Math.max(0, editGrandTotal - parseFloat(editOnlineAmount || 0) - parseFloat(editPaidCash || 0)).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -848,7 +969,7 @@ export default function Bills() {
                     {editLoading ? "Saving..." : "Save Changes"}
                   </button>
                   <button type="button" className="btn-outline" style={{ flex: 1 }}
-                    onClick={() => { setEditModal(null); setEditItems([]); setEditPaid(""); setEditDriverId(""); setEditDeliveryDate(""); }}>
+                    onClick={() => { setEditModal(null); setEditItems([]); setEditPaid(""); setEditDriverId(""); setEditDeliveryDate(""); setEditPaymentMode("CASH"); setEditOnlineAmount(""); setEditPaidCash(""); }}>
                     Cancel
                   </button>
                 </div>
