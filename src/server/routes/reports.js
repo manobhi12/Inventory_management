@@ -80,15 +80,17 @@ const addBillsSheet = async (sheet, bills, pool) => {
 
 const addCounterSheet = async (sheet, sales) => {
   sheet.columns = [
-    { key: 'date', width: 14 }, { key: 'time', width: 12 }, { key: 'product', width: 25 },
-    { key: 'bottles', width: 12 }, { key: 'price', width: 14 }, { key: 'total', width: 14 },
+    { key: 'sale', width: 14 }, { key: 'date', width: 14 }, { key: 'time', width: 12 },
+    { key: 'product', width: 25 }, { key: 'bottles', width: 12 },
+    { key: 'price', width: 14 }, { key: 'total', width: 14 },
   ];
-  const hRow = sheet.addRow(['Date', 'Time', 'Product', 'Bottles Sold', 'Price/Bottle', 'Total']);
+  const hRow = sheet.addRow(['Sale #', 'Date', 'Time', 'Product', 'Bottles Sold', 'Price/Bottle', 'Total']);
   headerStyle(hRow);
 
   let grandTotal = 0;
   sales.forEach(s => {
     const row = sheet.addRow([
+      s.sale_number || '—',
       new Date(s.created_at).toLocaleDateString('en-IN'),
       new Date(s.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
       s.product_name,
@@ -96,17 +98,17 @@ const addCounterSheet = async (sheet, sales) => {
       parseFloat(s.price_per_unit),
       parseFloat(s.total_amount),
     ]);
-    row.getCell(5).numFmt = '₹#,##0.00';
     row.getCell(6).numFmt = '₹#,##0.00';
-    row.getCell(6).font = { bold: true };
+    row.getCell(7).numFmt = '₹#,##0.00';
+    row.getCell(7).font = { bold: true };
     row.eachCell(cell => { cell.alignment = { vertical: 'middle' }; cell.border = { bottom: { style: 'hair', color: { argb: 'FFE5E7EB' } } }; });
     grandTotal += parseFloat(s.total_amount);
   });
 
   sheet.addRow([]);
-  const tRow = sheet.addRow(['', '', 'TOTAL', '', '', grandTotal]);
+  const tRow = sheet.addRow(['', '', '', 'TOTAL', '', '', grandTotal]);
   tRow.eachCell(cell => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF111111' } }; cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 }; });
-  tRow.getCell(6).numFmt = '₹#,##0.00';
+  tRow.getCell(7).numFmt = '₹#,##0.00';
   tRow.height = 22;
 };
 
@@ -613,12 +615,13 @@ const addDailySummarySheet = async (sheet, date, gid, pool) => {
   const csRes = await pool.query(`
     SELECT
       p.name as product_name,
-      SUM(cs.quantity_units) as bottles,
-      SUM(cs.total_amount) as total,
-      SUM(CASE WHEN cs.payment_mode = 'ONLINE' THEN cs.total_amount ELSE 0 END) as online_total,
-      SUM(CASE WHEN cs.payment_mode = 'CASH' OR cs.payment_mode IS NULL THEN cs.total_amount ELSE 0 END) as cash_total
+      SUM(csi.quantity_units) as bottles,
+      SUM(csi.total_amount) as total,
+      SUM(CASE WHEN cs.payment_mode = 'ONLINE' THEN csi.total_amount ELSE 0 END) as online_total,
+      SUM(CASE WHEN cs.payment_mode IN ('CASH','SPLIT') OR cs.payment_mode IS NULL THEN csi.total_amount ELSE 0 END) as cash_total
     FROM counter_sales cs
-    JOIN products p ON p.id = cs.product_id
+    JOIN counter_sale_items csi ON csi.counter_sale_id = cs.id
+    JOIN products p ON p.id = csi.product_id
     WHERE DATE(cs.created_at) = '${date}' ${gCsAnd}
     GROUP BY p.name
     ORDER BY total DESC
@@ -913,7 +916,14 @@ router.get('/download/:type', auth, async (req, res) => {
     }
 
     if (['counter', 'complete'].includes(type)) {
-      const q = `SELECT cs.*, p.name as product_name, p.bottles_per_case, p.selling_price_per_unit FROM counter_sales cs JOIN products p ON cs.product_id=p.id WHERE DATE(cs.created_at) BETWEEN '${from}' AND '${to}' ${csAnd} ORDER BY cs.created_at DESC`;
+      const q = `SELECT cs.created_at, cs.payment_mode, cs.sale_number,
+        p.name as product_name, p.bottles_per_case, p.selling_price_per_unit,
+        csi.quantity_units, csi.price_per_unit, csi.total_amount
+        FROM counter_sales cs
+        JOIN counter_sale_items csi ON csi.counter_sale_id = cs.id
+        JOIN products p ON csi.product_id = p.id
+        WHERE DATE(cs.created_at) BETWEEN '${from}' AND '${to}' ${csAnd}
+        ORDER BY cs.created_at DESC`;
       counterSales = (await pool.query(q)).rows;
     }
 

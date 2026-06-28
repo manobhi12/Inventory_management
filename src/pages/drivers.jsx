@@ -179,6 +179,13 @@ export default function Drivers() {
         </tbody></table>
         <div class="line"></div>
         <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:bold;padding:4px 0;">
+          <span>TOTAL CASES</span><span>${items.reduce((s, item) => {
+            const bpc = parseInt(item.bottles_per_case) || 24;
+            const total = parseInt(item.quantity_cases) * bpc + parseInt(item.quantity_units);
+            return s + Math.floor(total / bpc);
+          }, 0)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:bold;padding:4px 0;">
           <span>TOTAL VALUE</span><span>₹${totalValue.toLocaleString()}</span>
         </div>
         <div class="line"></div>

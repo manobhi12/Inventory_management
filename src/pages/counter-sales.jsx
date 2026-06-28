@@ -328,6 +328,56 @@ export default function CounterSales() {
     }
   };
 
+  const printCounterSale = async (sale) => {
+  const items = (await api.get(`/counter-sales/${sale.id}/items`)).data;
+  const win = window.open('', '_blank');
+  win.document.write(`<html><head><title>Counter Sale #${sale.sale_number}</title>
+    <style>
+      @media print { body{margin:0;padding:8px;} }
+      body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial; font-size:12px; color:#111; padding:20px; max-width:300px; width:300px; margin:auto; box-sizing:border-box; }
+      .title { font-size:16px; font-weight:800; text-align:center; margin-bottom:4px; }
+      .center { text-align:center; font-size:11px; color:#111; margin-bottom:8px; }
+      .line { border-top:1px dashed #000; margin:8px 0; }
+      .row { display:flex; justify-content:space-between; margin:4px 0; line-height:1; font-weight:700; }
+      table { width:100%; border-collapse:collapse; margin:8px 0; font-size:12px; }
+      th { text-align:left; font-size:11px; border-bottom:1px solid #000; padding:3px 0; text-transform:uppercase; color:#111; }
+      td { padding:3px 0; font-size:12px; color:#111; }
+      .num { font-family:"Roboto Mono","Courier New",monospace; font-variant-numeric:tabular-nums; }
+      .right { text-align:right; }
+      @media print { body{max-width:300px;width:300px;} }
+    </style>
+  </head><body>
+    <div class="title">COUNTER SALE</div>
+    <div class="center">${new Date(sale.created_at).toLocaleDateString('en-IN')} ${new Date(sale.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</div>
+    <div class="line"></div>
+    <div class="row"><strong>Sale No.:</strong><strong class="num">#${sale.sale_number}</strong></div>
+    <div class="row"><strong>Mode:</strong><strong class="num">${sale.payment_mode}</strong></div>
+    <div class="line"></div>
+    <table><thead><tr>
+      <th>Product</th><th style="text-align:center">Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Amt</th>
+    </tr></thead><tbody>
+    ${items.map(item => {
+      const bpc = item.bottles_per_case || 24;
+      const cases = Math.floor(item.quantity_units / bpc);
+      const bottles = item.quantity_units % bpc;
+      const qty = `${cases > 0 ? cases + 'C' : ''}${bottles > 0 ? ' ' + bottles + 'B' : ''}` || item.quantity_units + 'B';
+      return `<tr>
+        <td style="font-weight:600">${item.product_name}</td>
+        <td style="text-align:center">${qty}</td>
+        <td class="right num">₹${Number(item.price_per_unit).toLocaleString()}</td>
+        <td class="right num">₹${Number(item.total_amount).toLocaleString()}</td>
+      </tr>`;
+    }).join('')}
+    </tbody></table>
+    <div class="line"></div>
+    <div class="row" style="font-size:13px;"><span>TOTAL</span><span class="num">₹${Number(sale.total_amount).toLocaleString()}</span></div>
+    <div class="row" style="font-size:13px;color:#111;font-weight:600;"><span>Total Cases</span><span class="num">${items.reduce((s, i) => s + Math.floor(i.quantity_units / (i.bottles_per_case || 24)), 0)} cases</span></div>
+    <div class="line"></div>
+    <br/><div class="center" style="margin-top:12px;">Thank you!</div>
+  </body></html>`);
+  win.document.close(); win.focus(); win.print(); win.close();
+};
+
   const productOptions = products.map(p => ({ value: p.id, label: p.name }));
   const selectedEditProduct = products.find(p => p.id === editItem.product_id);
   const editBpc = selectedEditProduct?.bottles_per_case || 24;
@@ -418,6 +468,7 @@ export default function CounterSales() {
                     </td>
                     <td style={{ padding: "16px" }}>
                       <div style={{ display: "flex", gap: "16px" }}>
+                        <button onClick={() => printCounterSale(s)} style={actionBtn("#2563eb")}>Print</button>
                         <button onClick={() => openEditSession(s)} style={actionBtn("#C8102E")}>Edit</button>
                         <button onClick={() => handleDelete(s.id)} style={actionBtn("#aaaaaa")}>Delete</button>
                       </div>

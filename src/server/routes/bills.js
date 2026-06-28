@@ -23,7 +23,8 @@ if (result.rows[0]) {
 router.get('/', auth, async (req, res) => {
   try {
     let query = `
-      SELECT b.*, s.name as shop_name, g.name as godown_name, d.name as driver_name, r.name as route_name
+      SELECT b.*, s.name as shop_name, s.phone as shop_phone, g.name as godown_name, d.name as driver_name, r.name as route_name,
+        (SELECT COALESCE(SUM(bi.quantity_cases), 0) FROM bill_items bi WHERE bi.bill_id = b.id) as total_cases
       FROM bills b
       JOIN shops s ON b.shop_id = s.id
       JOIN godowns g ON b.godown_id = g.id

@@ -171,7 +171,7 @@ export default function Bills() {
       return b?.driver_name || null;
     }).filter(Boolean))].join(", ");
     const win = window.open('', '_blank');
-    win.document.write(`<html><head><title>Load Sheet</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'Courier New',monospace;font-size:14px;padding:20px;max-width:320px;margin:auto;}.title{font-size:20px;font-weight:bold;text-align:center;margin-bottom:4px;}.center{text-align:center;font-size:12px;color:#555;margin-bottom:8px;}.driver{text-align:center;font-size:15px;font-weight:bold;margin-bottom:4px;}.line{border-top:2px dashed #000;margin:10px 0;}table{width:100%;border-collapse:collapse;}th{text-align:left;border-bottom:2px solid #000;padding:5px 4px;font-size:12px;text-transform:uppercase;}td{padding:8px 4px;border-bottom:1px dotted #ccc;font-size:14px;}.qty{text-align:center;font-size:16px;font-weight:bold;}@media print{body{padding:5px;}}</style></head><body><div class="title">LOAD SHEET</div><div class="center">${new Date().toLocaleDateString('en-IN')} | ${selectedBills.length} bills</div><div class="center">${bills.find(b => b.id === selectedBills[0])?.route_name || ""}</div> ${driverNames ? `<div class="driver">Driver: ${driverNames}</div>` : ''}<div class="line"></div><table><thead><tr><th>Product</th><th style="text-align:center">Cases</th><th style="text-align:center">Bottles</th><th style="text-align:right">Value</th></tr></thead><tbody>${Object.entries(productMap).map(([name, qty]) => { const value = (qty.totalCases * qty.pricePerCase) + (qty.extraBottles * qty.pricePerUnit); return `<tr><td style="font-weight:bold">${name}</td><td class="qty">${qty.totalCases}</td><td class="qty">${qty.extraBottles}</td><td style="text-align:right;font-weight:bold">₹${value.toLocaleString()}</td></tr>`; }).join('')}</tbody></table><div class="line"></div><div style="display:flex;justify-content:space-between;font-size:16px;font-weight:bold;padding:4px 0;"><span>TOTAL VALUE</span><span>₹${Object.values(productMap).reduce((s, qty) => s + (qty.totalCases * qty.pricePerCase) + (qty.extraBottles * qty.pricePerUnit), 0).toLocaleString()}</span></div><div class="line"></div><div class="center">Total Bills: ${selectedBills.length}</div></body></html>`);
+    win.document.write(`<html><head><title>Load Sheet</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'Courier New',monospace;font-size:14px;padding:20px;max-width:320px;margin:auto;}.title{font-size:20px;font-weight:bold;text-align:center;margin-bottom:4px;}.center{text-align:center;font-size:12px;color:#555;margin-bottom:8px;}.driver{text-align:center;font-size:15px;font-weight:bold;margin-bottom:4px;}.line{border-top:2px dashed #000;margin:10px 0;}table{width:100%;border-collapse:collapse;}th{text-align:left;border-bottom:2px solid #000;padding:5px 4px;font-size:12px;text-transform:uppercase;}td{padding:8px 4px;border-bottom:1px dotted #ccc;font-size:14px;}.qty{text-align:center;font-size:16px;font-weight:bold;}@media print{body{padding:5px;}}</style></head><body><div class="title">LOAD SHEET</div><div class="center">${new Date().toLocaleDateString('en-IN')} | ${selectedBills.length} bills</div><div class="center">${bills.find(b => b.id === selectedBills[0])?.route_name || ""}</div> ${driverNames ? `<div class="driver">Driver: ${driverNames}</div>` : ''}<div class="line"></div><table><thead><tr><th>Product</th><th style="text-align:center">Cases</th><th style="text-align:center">Bottles</th><th style="text-align:right">Value</th></tr></thead><tbody>${Object.entries(productMap).map(([name, qty]) => { const value = (qty.totalCases * qty.pricePerCase) + (qty.extraBottles * qty.pricePerUnit); return `<tr><td style="font-weight:bold">${name}</td><td class="qty">${qty.totalCases}</td><td class="qty">${qty.extraBottles}</td><td style="text-align:right;font-weight:bold">₹${value.toLocaleString()}</td></tr>`; }).join('')}</tbody></table><div class="line"></div><div style="display:flex;justify-content:space-between;font-size:16px;font-weight:bold;padding:4px 0;"><span>TOTAL CASES</span><span>${Object.values(productMap).reduce((s, qty) => s + qty.totalCases, 0)}</span></div><div style="display:flex;justify-content:space-between;font-size:16px;font-weight:bold;padding:4px 0;"><span>TOTAL VALUE</span><span>₹${Object.values(productMap).reduce((s, qty) => s + (qty.totalCases * qty.pricePerCase) + (qty.extraBottles * qty.pricePerUnit), 0).toLocaleString()}</span></div><div class="line"></div><div class="center">Total Bills: ${selectedBills.length}</div></body></html>`);
     win.document.close(); win.focus(); win.print(); win.close();
   };
 
@@ -393,6 +393,7 @@ export default function Bills() {
     </head><body>
       <div class="title">SHOP BILL</div>
       <div class="shop-name">${bill.shop_name}</div>
+      ${bill.shop_phone ? `<div class="center" style="font-size:12px;font-weight:600;">${bill.shop_phone}</div>` : ''}
       <div class="center small"><span>Route: </span><span>${bill.route_name || bill.godown_name}</span></div>
       <div class="line"></div>
       <div class="row"><strong>Bill No.:</strong><strong class="num">${bill.bill_code || '#' + bill.bill_number}</strong></div>
@@ -417,6 +418,7 @@ export default function Bills() {
       </tbody></table>
       <div class="line"></div>
       <div class="row total-row"><span>TOTAL</span><span class="num">₹${Number(bill.total_amount).toLocaleString()}</span></div>
+      <div class="row" style="font-size:13px;color:#111;font-weight:600;"><span>Total Cases</span><span class="num">${items.reduce((s, i) => s + parseInt(i.quantity_cases || 0), 0)} cases</span></div>
       <div class="row"><span>Paid</span><span class="num">₹${Number(bill.paid_amount || 0).toLocaleString()}</span></div>
       <div class="row bold"><span>Pending</span><span class="num">₹${Number(bill.pending_amount || 0).toLocaleString()}</span></div>
       <div class="line"></div>
@@ -532,9 +534,16 @@ export default function Bills() {
                     {/* Total — with expand toggle */}
                     <td style={{ padding: "16px" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <span style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 700, fontSize: "20px" }}>
-                          ₹{Number(b.total_amount).toLocaleString()}
-                        </span>
+                        <div>
+                          <span style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 700, fontSize: "20px" }}>
+                            ₹{Number(b.total_amount).toLocaleString()}
+                          </span>
+                          {b.total_cases > 0 && (
+                            <div style={{ fontSize: "11px", color: "#888", fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 600, marginTop: "2px" }}>
+                              {b.total_cases} cases
+                            </div>
+                          )}
+                        </div>
                         <button
                           onClick={() => toggleExpand(b.id)}
                           style={{
@@ -620,6 +629,16 @@ export default function Bills() {
               <div style={{ marginBottom: "20px" }}>
                 <label style={labelStyle}>Shop</label>
                 <SearchableSelect options={shopOptions} value={form.shop_id} onChange={val => setForm({ ...form, shop_id: val })} placeholder="Search shop name or owner..." required />
+{form.shop_id && (() => {
+  const s = shops.find(s => s.id === form.shop_id);
+  if (!s) return null;
+  return (
+    <div style={{ marginTop: "8px", fontSize: "13px", color: "#555", fontFamily: "'Barlow Condensed', sans-serif", display: "flex", gap: "16px" }}>
+      {s.route_name && <span>📍 {s.route_name}</span>}
+      {s.phone && <span>📞 {s.phone}</span>}
+    </div>
+  );
+})()}
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "20px" }}>
                 <div>
